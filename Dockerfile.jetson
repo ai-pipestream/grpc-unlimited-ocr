@@ -1,0 +1,38 @@
+# Jetson image (tag latest-jetson): the CUDA backend built natively on an
+# Orin (sm_87) against CUDA 13.2, the version JetPack 7 / L4T R39 drivers
+# serve. Build it on the Jetson itself; run with the NVIDIA runtime so the
+# host's driver libraries are mounted in:
+#
+#   docker build -f Dockerfile.jetson -t grpc-unlimited-ocr:jetson .
+#   docker run --rm --runtime nvidia -v /path/to/unlimited-ocr-2:/models:ro \
+#     -v "$PWD/pages:/pages:ro" grpc-unlimited-ocr:jetson --weights int8 /pages/page1.png
+#
+# bf16 weights do not fit beside the OS in 8 GB; use --weights int8.
+
+FROM nvidia/cuda:13.2.1-devel-ubuntu24.04 AS build
+ENV DEBIAN_FRONTEND=noninteractive
+# Ubuntu 24.04 defaults to GCC 13, which lacks <print>; GCC 14 is in the archive.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates cmake g++-14 git ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+RUN cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
+      -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_CUDA_HOST_COMPILER=g++-14 \
+      -DCMAKE_CUDA_ARCHITECTURES=87 \
+ && cmake --build /build \
+ && ctest --test-dir /build --output-on-failure \
+ && mkdir -p /out && cp /build/uocr-run /out/ \
+ && mkdir -p /out/tests && cp /build/*_test /out/tests/
+
+FROM nvidia/cuda:13.2.1-runtime-ubuntu24.04
+# The base ships CUDA forward-compat libraries (compat, compat_orin); the Jetson container
+# toolkit's compat hook fails parsing them (panics at container start),
+# and the L4T driver is new enough, so they are removed.
+RUN rm -rf /usr/local/cuda-*/compat*
+ARG UOCR_REVISION=
+LABEL org.opencontainers.image.revision=${UOCR_REVISION}
+COPY --from=build /out/uocr-run /usr/local/bin/uocr-run
+COPY --from=build /out/tests/ /usr/local/libexec/uocr-tests/
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/uocr-run", "--models", "/models", "--backend", "cuda"]

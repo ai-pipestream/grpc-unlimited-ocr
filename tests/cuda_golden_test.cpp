@@ -7,6 +7,7 @@
 #include <iterator>
 #include <regex>
 #include <string>
+#include <vector>
 
 #include "backend/cuda/context.h"
 #include "check.h"
@@ -53,7 +54,11 @@ int main() {
     const std::string png = text_of(golden / "page.png");
     const auto page = preprocess_page(decode_image({reinterpret_cast<const std::uint8_t*>(png.data()), png.size()}));
     const auto [want, want_boxes] = split_boxes(text_of(golden / "output_raw.txt"));
-    for (const auto format : {cuda::WeightFormat::kBf16, cuda::WeightFormat::kInt8}) {
+    // bf16 needs about 8 GB on the device; an 8 GB Jetson shares that with
+    // the OS, so it runs the int8 leg only.
+    std::vector<cuda::WeightFormat> formats{cuda::WeightFormat::kInt8};
+    if (cuda::device_info(0).total_bytes >= (12ULL << 30)) formats.insert(formats.begin(), cuda::WeightFormat::kBf16);
+    for (const auto format : formats) {
       cuda::CudaDecoder decoder(ctx, weights, DecoderDims{}, cuda::CudaDecoder::default_router_params(), format);
       GenerationConfig config;
       config.max_new_tokens = 600;
