@@ -1,0 +1,6 @@
+mode	cuda-bf16
+torch	2.13.0+cu130
+finish	stop
+sam_shape	[1, 1024, 16, 16]
+projector_shape	[1, 256, 1280]
+generated	174
