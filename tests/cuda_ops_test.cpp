@@ -9,7 +9,9 @@
 #include "backend/cuda/ops.h"
 #include "backend/reference/ops.h"
 #include "check.h"
+#include "model/attention_plan.h"
 #include "model/block_router.h"
+#include "model/decoder.h"
 #include "model/page_rope.h"
 #include "tensor/dtype.h"
 
@@ -179,6 +181,44 @@ int main() {
       cu::Array out(ctx, cu::DType::kF32, 3 * 16);
       cu::block_summaries(ctx, dk.f32(), 70, 16, dh.f32(), 32, out.f32());
       expect("block_summaries", max_rel(out.download(), want), 1e-5);
+    }
+    {  // device block routing against the host selector and key mask
+      RouterParams rp = Decoder::default_router();
+      rp.block_size = 4;
+      rp.local_blocks = 2;
+      rp.top_m = 6;
+      rp.top_k = 4;
+      const std::int64_t rows = 5, first = 40, keys = first + rows, nblk = (keys + 3) / 4;
+      Tensor z = random({rows, nblk});
+      // Two tied scores, to pin the tie rule.
+      z.row(0)[1] = z.row(0)[3] = 2.5f;
+      BlockPages blocks{std::vector<std::int64_t>(static_cast<std::size_t>(nblk), -1),
+                        std::vector<std::int64_t>(static_cast<std::size_t>(nblk), -1)};
+      for (std::int64_t b = 0; b < 8; ++b) {
+        blocks.min_page[static_cast<std::size_t>(b)] = b < 4 ? 0 : 1;
+        blocks.max_page[static_cast<std::size_t>(b)] = b < 4 ? 0 : 1;
+      }
+      const std::vector<std::int64_t> pages{0, 1, -1, 5, 1};  // page 5 has no block: unrestricted
+      std::vector<std::vector<std::uint8_t>> cands;
+      for (const auto pg : pages) cands.push_back(page_candidates(blocks, pg, nblk));
+      Tensor masked = z;
+      mask_block_scores(masked, first, rp);
+      const auto want = key_mask(select_blocks(masked, flatten_candidates(cands, nblk), rp), rows, first, keys, rp);
+
+      auto dz = up(ctx, z), dmin = up_ids(ctx, blocks.min_page), dmax = up_ids(ctx, blocks.max_page),
+           dpage = up_ids(ctx, pages);
+      cu::Array dmask(ctx, cu::DType::kF32, rows * keys);
+      cu::route_blocks(ctx, dz.f32(), rows, nblk, first, keys, dmin.i64(), dmax.i64(), nblk, dpage.i64(), -1,
+                       {rp.block_size, rp.local_blocks, rp.top_m, rp.top_k, rp.idx_scale, rp.floor, rp.sigma},
+                       dmask.f32());
+      const auto got = dmask.download();
+      double worst = 0.0;
+      for (std::size_t i = 0; i < want.size(); ++i) {
+        const bool a = std::isinf(want[i]), b = std::isinf(got[i]);
+        require(a == b, "device routing reads the same keys as the host plan");
+        if (!a) worst = std::max(worst, std::fabs(static_cast<double>(got[i]) - want[i]));
+      }
+      expect("route_blocks bias", worst, 1e-5);
     }
   });
 }

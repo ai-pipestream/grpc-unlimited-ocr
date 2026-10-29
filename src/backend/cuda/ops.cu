@@ -3,6 +3,8 @@
 #include <cuda_bf16.h>
 
 #include <cfloat>
+#include <climits>
+#include <stdexcept>
 #include <cmath>
 
 #include "backend/cuda/context_impl.h"
@@ -129,14 +131,15 @@ __global__ void scale_mask_kernel(float* x, float scale, const float* mask, std:
 
 __global__ void rope_kernel(float* x, std::int64_t rows, std::int64_t heads, std::int64_t dim, const std::int64_t* tok,
                             const std::int64_t* page, const float* inv_tok, std::int64_t n_tok, const float* inv_page,
-                            std::int64_t page_mod) {
+                            std::int64_t page_mod, std::int64_t one_tok, std::int64_t one_page) {
   const std::int64_t half = dim / 2;
   const std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
   if (i >= rows * heads * half) return;
   const std::int64_t r = i / (heads * half), h = (i / half) % heads, p = i % half;
-  std::int64_t pg = page[r];
+  std::int64_t pg = page != nullptr ? page[r] : one_page;
+  const std::int64_t tk = tok != nullptr ? tok[r] : one_tok;
   if (page_mod > 0) pg = ((pg % page_mod) + page_mod) % page_mod;
-  const float angle = p < n_tok ? static_cast<float>(tok[r]) * inv_tok[p] : static_cast<float>(pg) * inv_page[p - n_tok];
+  const float angle = p < n_tok ? static_cast<float>(tk) * inv_tok[p] : static_cast<float>(pg) * inv_page[p - n_tok];
   float s, c;
   sincosf(angle, &s, &c);
   float* v = x + r * heads * dim + h * dim;
@@ -344,10 +347,10 @@ void scale_add_mask(const Context& ctx, float* x, float scale, const float* mask
 
 void rope(const Context& ctx, float* x, std::int64_t rows, std::int64_t heads, std::int64_t dim, const std::int64_t* tok,
           const std::int64_t* page, const float* inv_tok, std::int64_t n_tok, const float* inv_page, std::int64_t n_page,
-          std::int64_t page_mod) {
+          std::int64_t page_mod, std::int64_t one_tok, std::int64_t one_page) {
   (void)n_page;
-  rope_kernel<<<blocks_for(rows * heads * (dim / 2)), kThreads, 0, stream_of(ctx)>>>(x, rows, heads, dim, tok, page,
-                                                                                      inv_tok, n_tok, inv_page, page_mod);
+  rope_kernel<<<blocks_for(rows * heads * (dim / 2)), kThreads, 0, stream_of(ctx)>>>(
+      x, rows, heads, dim, tok, page, inv_tok, n_tok, inv_page, page_mod, one_tok, one_page);
 }
 
 void im2col(const Context& ctx, const float* x, std::int64_t c, std::int64_t h, std::int64_t w, std::int64_t kh,
@@ -396,6 +399,285 @@ void block_summaries(const Context& ctx, const float* keys, std::int64_t s, std:
                      std::int64_t block_size, float* out) {
   const std::int64_t nblk = (s + block_size - 1) / block_size;
   block_summary_kernel<<<static_cast<unsigned>(nblk), 128, 0, stream_of(ctx)>>>(keys, s, d, head_cls, block_size, out);
+}
+
+}  // namespace uocr::cuda
+
+namespace uocr::cuda {
+namespace {
+
+constexpr float kScoreMaskedDev = -1.0e9f;
+constexpr float kEntmaxMaskedDev = -1.0e4f;
+constexpr int kRouteThreads = 256;
+constexpr int kMaxTop = 32;
+
+// 1.5-entmax of `n` values already in descending order, in place; the same
+// float operations as model/block_router.cpp's entmax15.
+__device__ void entmax15_sorted(float* x, int n) {
+  const float peak = x[0];
+  for (int i = 0; i < n; ++i) x[i] = (x[i] - peak) / 2.0f;
+  float sum = 0.0f, sum_sq = 0.0f;
+  int support = 0;
+  float tau[kMaxTop];
+  for (int k = 0; k < n; ++k) {
+    sum += x[k];
+    sum_sq += x[k] * x[k];
+    const float rho = static_cast<float>(k + 1);
+    const float mean = sum / rho, mean_sq = sum_sq / rho;
+    const float ss = rho * (mean_sq - mean * mean);
+    const float delta = fmaxf((1.0f - ss) / rho, 0.0f);
+    tau[k] = mean - sqrtf(delta);
+    if (tau[k] <= x[k]) ++support;
+  }
+  const float tau_star = tau[max(support, 1) - 1];
+  for (int i = 0; i < n; ++i) {
+    const float t = fmaxf(x[i] - tau_star, 0.0f);
+    x[i] = t * t;
+  }
+}
+
+__global__ void route_kernel(const float* z, std::int64_t nblk, std::int64_t first_pos, std::int64_t keys,
+                             const std::int64_t* block_min, const std::int64_t* block_max, std::int64_t prompt_blocks,
+                             const std::int64_t* query_page, std::int64_t one_page, RouteParams p, float* mask) {
+  extern __shared__ float shared[];
+  float* x = shared;                                                // nblk
+  unsigned char* cand = reinterpret_cast<unsigned char*>(x + nblk);  // nblk
+  __shared__ float top_val[kMaxTop];
+  __shared__ int top_idx[kMaxTop];
+  __shared__ float sel_bias[kMaxTop];
+  __shared__ int sel_block[kMaxTop];
+  __shared__ int sel_valid[kMaxTop];
+  __shared__ float red_val[kRouteThreads];
+  __shared__ int red_idx[kRouteThreads];
+
+  const std::int64_t row = blockIdx.x;
+  const std::int64_t pos = first_pos + row;
+  const std::int64_t last_remote = pos / p.block_size - p.local_blocks;
+  const std::int64_t page = query_page != nullptr ? query_page[row] : one_page;
+  const float* zr = z + row * nblk;
+
+  int any_local = 0;
+  for (std::int64_t b = threadIdx.x; b < nblk; b += blockDim.x) {
+    const bool remote = b <= last_remote;
+    const bool allowed = page >= 0 && b < prompt_blocks && block_min[b] >= 0 && block_min[b] <= page &&
+                         page <= block_max[b];
+    x[b] = remote ? fminf(fmaxf(zr[b], -1.0e4f), 1.0e4f) : kScoreMaskedDev;
+    cand[b] = remote && allowed;
+    any_local |= cand[b];
+  }
+  // A page with no image block in range means "no restriction" (the host's
+  // empty candidate list), and so does a row with no candidate at all.
+  const int any = __syncthreads_or(any_local);
+  for (std::int64_t b = threadIdx.x; b < nblk; b += blockDim.x) {
+    const bool remote = b <= last_remote;
+    if (!any) cand[b] = remote;
+    x[b] = cand[b] ? x[b] * p.idx_scale : kEntmaxMaskedDev;
+  }
+  __syncthreads();
+
+  const int m = static_cast<int>(p.top_m < nblk ? (p.top_m > 1 ? p.top_m : 1) : (nblk > 1 ? nblk : 1));
+  const int k = p.top_k < m ? (p.top_k > 1 ? static_cast<int>(p.top_k) : 1) : m;
+  // Top m by repeated argmax; a tie takes the lower block index.
+  for (int j = 0; j < m; ++j) {
+    float best = -INFINITY;
+    int best_i = INT_MAX;
+    for (std::int64_t b = threadIdx.x; b < nblk; b += blockDim.x) {
+      bool taken = false;
+      for (int t = 0; t < j; ++t) taken |= top_idx[t] == b;
+      if (taken) continue;
+      if (x[b] > best || (x[b] == best && b < best_i)) {
+        best = x[b];
+        best_i = static_cast<int>(b);
+      }
+    }
+    red_val[threadIdx.x] = best;
+    red_idx[threadIdx.x] = best_i;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+      if (threadIdx.x < s) {
+        const float v = red_val[threadIdx.x + s];
+        const int i = red_idx[threadIdx.x + s];
+        if (v > red_val[threadIdx.x] || (v == red_val[threadIdx.x] && i < red_idx[threadIdx.x])) {
+          red_val[threadIdx.x] = v;
+          red_idx[threadIdx.x] = i;
+        }
+      }
+      __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+      top_val[j] = red_val[0];
+      top_idx[j] = red_idx[0];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    entmax15_sorted(top_val, m);
+    float logp_sum = 0.0f;
+    int count = 0;
+    float logp[kMaxTop];
+    for (int j = 0; j < k; ++j) {
+      sel_block[j] = top_idx[j];
+      sel_valid[j] = cand[top_idx[j]];
+      logp[j] = logf(fmaxf(top_val[j], p.floor));
+      if (sel_valid[j]) {
+        logp_sum += logp[j];
+        ++count;
+      }
+    }
+    const float mu = logp_sum / static_cast<float>(max(count, 1));
+    for (int j = 0; j < k; ++j) sel_bias[j] = sel_valid[j] ? (logp[j] - mu) / p.sigma : 0.0f;
+  }
+  __syncthreads();
+
+  const std::int64_t window = p.local_blocks * p.block_size;
+  float* out = mask + row * keys;
+  for (std::int64_t j = threadIdx.x; j < keys; j += blockDim.x) {
+    float v = -INFINITY;
+    if (j <= pos) {
+      if (j > pos - window) {
+        v = 0.0f;
+      } else {
+        const int blk = static_cast<int>(j / p.block_size);
+        for (int t = 0; t < k; ++t) {
+          if (sel_valid[t] && sel_block[t] == blk) v = sel_bias[t];
+        }
+      }
+    }
+    out[j] = v;
+  }
+}
+
+}  // namespace
+
+void route_blocks(const Context& ctx, const float* z, std::int64_t rows, std::int64_t nblk, std::int64_t first_pos,
+                  std::int64_t keys, const std::int64_t* block_min, const std::int64_t* block_max,
+                  std::int64_t prompt_blocks, const std::int64_t* query_page, std::int64_t one_page,
+                  const RouteParams& params, float* mask) {
+  if (params.top_m > kMaxTop) throw std::invalid_argument("route_blocks: top_m above 32");
+  const std::size_t shared = static_cast<std::size_t>(nblk) * 5;
+  route_kernel<<<static_cast<unsigned>(rows), kRouteThreads, shared, stream_of(ctx)>>>(
+      z, nblk, first_pos, keys, block_min, block_max, prompt_blocks, query_page, one_page, params, mask);
+}
+
+}  // namespace uocr::cuda
+
+namespace uocr::cuda {
+namespace {
+
+__global__ void gather_one_bf16_kernel(const __nv_bfloat16* table, std::int64_t index, std::int64_t cols, float* dst) {
+  const std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
+  if (i < cols) dst[i] = __bfloat162float(table[index * cols + i]);
+}
+
+// One thread per row: softmax then top k by repeated argmax. Rows are few
+// (decode) or the experts are few (64), so a serial row is cheap.
+__global__ void expert_topk_kernel(const float* logits, std::int64_t rows, std::int64_t experts, std::int64_t k,
+                                   std::int64_t* ids, float* weights) {
+  const std::int64_t r = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
+  if (r >= rows) return;
+  const float* row = logits + r * experts;
+  float peak = -INFINITY;
+  for (std::int64_t e = 0; e < experts; ++e) peak = fmaxf(peak, row[e]);
+  double total = 0.0;
+  for (std::int64_t e = 0; e < experts; ++e) total += expf(row[e] - peak);
+  const float inv = static_cast<float>(1.0 / total);
+  unsigned long long taken[2] = {0, 0};  // up to 128 experts
+  for (std::int64_t j = 0; j < k; ++j) {
+    float best = -INFINITY;
+    std::int64_t best_e = 0;
+    for (std::int64_t e = 0; e < experts; ++e) {
+      if (taken[e / 64] & (1ULL << (e % 64))) continue;
+      const float s = expf(row[e] - peak) * inv;
+      if (s > best) {
+        best = s;
+        best_e = e;
+      }
+    }
+    taken[best_e / 64] |= 1ULL << (best_e % 64);
+    ids[r * k + j] = best_e;
+    weights[r * k + j] = best;
+  }
+}
+
+constexpr int kWarp = 32;
+
+__device__ float warp_sum(float v) {
+  for (int off = kWarp / 2; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffU, v, off);
+  return v;
+}
+
+// Grid: (ffn rows / warps per block, k). One warp per output row of one
+// expert slot; x is staged once per block in shared memory, bf16-rounded.
+__global__ void expert_gate_up_kernel(const float* x, std::int64_t hidden, std::int64_t ffn,
+                                      const __nv_bfloat16* gate, const __nv_bfloat16* up, const std::int64_t* ids,
+                                      float* act) {
+  extern __shared__ float xs[];
+  for (std::int64_t i = threadIdx.x; i < hidden; i += blockDim.x) xs[i] = __bfloat162float(__float2bfloat16_rn(x[i]));
+  __syncthreads();
+  const int warps = blockDim.x / kWarp, lane = threadIdx.x % kWarp;
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * warps + threadIdx.x / kWarp;
+  const std::int64_t slot = blockIdx.y;
+  if (row >= ffn) return;
+  const std::int64_t e = ids[slot];
+  const __nv_bfloat16* g = gate + (e * ffn + row) * hidden;
+  const __nv_bfloat16* u = up + (e * ffn + row) * hidden;
+  float sg = 0.0f, su = 0.0f;
+  for (std::int64_t i = lane; i < hidden; i += kWarp) {
+    sg += __bfloat162float(g[i]) * xs[i];
+    su += __bfloat162float(u[i]) * xs[i];
+  }
+  sg = warp_sum(sg);
+  su = warp_sum(su);
+  if (lane == 0) {
+    const float a = sg / (1.0f + expf(-sg)) * su;
+    act[slot * ffn + row] = __bfloat162float(__float2bfloat16_rn(a));
+  }
+}
+
+__global__ void expert_down_kernel(const float* act, std::int64_t hidden, std::int64_t ffn, const __nv_bfloat16* down,
+                                   const std::int64_t* ids, const float* weights, std::int64_t k, float* out) {
+  const int warps = blockDim.x / kWarp, lane = threadIdx.x % kWarp;
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * warps + threadIdx.x / kWarp;
+  if (row >= hidden) return;
+  float total = 0.0f;
+  for (std::int64_t j = 0; j < k; ++j) {
+    const __nv_bfloat16* w = down + (ids[j] * hidden + row) * ffn;
+    const float* a = act + j * ffn;
+    float s = 0.0f;
+    for (std::int64_t i = lane; i < ffn; i += kWarp) s += __bfloat162float(w[i]) * a[i];
+    s = warp_sum(s);
+    total += weights[j] * s;
+  }
+  if (lane == 0) out[row] = total;
+}
+
+}  // namespace
+
+void gather_row_bf16(const Context& ctx, const std::uint16_t* table, std::int64_t one_index, std::int64_t cols,
+                     float* dst) {
+  gather_one_bf16_kernel<<<blocks_for(cols), kThreads, 0, stream_of(ctx)>>>(
+      reinterpret_cast<const __nv_bfloat16*>(table), one_index, cols, dst);
+}
+
+void expert_topk(const Context& ctx, const float* logits, std::int64_t rows, std::int64_t experts, std::int64_t k,
+                 std::int64_t* ids, float* weights) {
+  if (experts > 128) throw std::invalid_argument("expert_topk: more than 128 experts");
+  expert_topk_kernel<<<blocks_for(rows), kThreads, 0, stream_of(ctx)>>>(logits, rows, experts, k, ids, weights);
+}
+
+void expert_ffn_one(const Context& ctx, const float* x, std::int64_t hidden, std::int64_t ffn,
+                    const std::uint16_t* gate, const std::uint16_t* up, const std::uint16_t* down,
+                    const std::int64_t* ids, const float* weights, std::int64_t k, float* out) {
+  auto stream = stream_of(ctx);
+  float* act = nullptr;
+  check(cudaMallocAsync(&act, static_cast<std::size_t>(k * ffn) * 4, stream), "expert scratch");
+  constexpr int kBlock = 256, kWarps = kBlock / kWarp;
+  const dim3 grid(static_cast<unsigned>((ffn + kWarps - 1) / kWarps), static_cast<unsigned>(k));
+  expert_gate_up_kernel<<<grid, kBlock, static_cast<std::size_t>(hidden) * 4, stream>>>(
+      x, hidden, ffn, reinterpret_cast<const __nv_bfloat16*>(gate), reinterpret_cast<const __nv_bfloat16*>(up), ids, act);
+  expert_down_kernel<<<static_cast<unsigned>((hidden + kWarps - 1) / kWarps), kBlock, 0, stream>>>(
+      act, hidden, ffn, reinterpret_cast<const __nv_bfloat16*>(down), ids, weights, k, out);
+  check(cudaFreeAsync(act, stream), "expert scratch free");
 }
 
 }  // namespace uocr::cuda
