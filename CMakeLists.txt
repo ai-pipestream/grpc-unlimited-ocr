@@ -105,14 +105,16 @@ if(UOCR_WITH_CUDA)
   add_library(uocr_cuda STATIC
     src/backend/cuda/context.cu
     src/backend/cuda/ops.cu
-    src/backend/cuda/decode_ops.cu)
+    src/backend/cuda/decode_ops.cu
+    src/backend/cuda/gemv_ops.cu)
   target_include_directories(uocr_cuda PUBLIC src)
   target_link_libraries(uocr_cuda PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt)
   # Model code on the CUDA backend: C++23 host code over the op set.
   add_library(uocr_cuda_model STATIC
     src/model/cuda/cuda_vision.cpp
     src/model/cuda/cuda_decoder.cpp
-    src/model/cuda/cuda_decode_step.cpp)
+    src/model/cuda/cuda_decode_step.cpp
+    src/model/cuda/device_weight.cpp)
   target_link_libraries(uocr_cuda_model PUBLIC uocr_reference uocr_cuda)
   target_link_libraries(uocr-run PRIVATE uocr_cuda_model)
   target_compile_definitions(uocr-run PRIVATE UOCR_WITH_CUDA=1)

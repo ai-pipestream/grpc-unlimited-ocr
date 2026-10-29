@@ -9,6 +9,7 @@
 
 #include "backend/cuda/context_impl.h"
 #include "backend/cuda/decode_ops.h"
+#include "backend/cuda/gemv_ops.h"
 
 namespace uocr::cuda {
 namespace {
@@ -22,36 +23,6 @@ cudaStream_t stream_of(const Context& ctx) { return ctx.impl().stream; }
 __global__ void to_bf16_kernel(const float* x, __nv_bfloat16* y, std::int64_t n) {
   const std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
   if (i < n) y[i] = __float2bfloat16_rn(x[i]);
-}
-
-// y[r] = w[r] . bf16(x) for one input row: a warp per output row, eight
-// bf16 weights per load, x staged once per block in shared memory.
-__global__ void gemv_bf16_kernel(const float* x, std::int64_t k, const __nv_bfloat16* w, std::int64_t n,
-                                 const float* bias, float* y) {
-  extern __shared__ float xs[];
-  for (std::int64_t i = threadIdx.x; i < k; i += blockDim.x) xs[i] = __bfloat162float(__float2bfloat16_rn(x[i]));
-  __syncthreads();
-  const int lane = threadIdx.x % 32, warps = blockDim.x / 32;
-  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * warps + threadIdx.x / 32;
-  if (row >= n) return;
-  const __nv_bfloat16* wr = w + row * k;
-  float acc = 0.0f;
-  if (k % 8 == 0) {
-    const uint4* w8 = reinterpret_cast<const uint4*>(wr);
-    for (std::int64_t c = lane; c < k / 8; c += 32) {
-      const uint4 packed = w8[c];
-      const __nv_bfloat162* pair = reinterpret_cast<const __nv_bfloat162*>(&packed);
-      const float* xv = xs + c * 8;
-      for (int q = 0; q < 4; ++q) {
-        const float2 f = __bfloat1622float2(pair[q]);
-        acc += f.x * xv[2 * q] + f.y * xv[2 * q + 1];
-      }
-    }
-  } else {
-    for (std::int64_t i = lane; i < k; i += 32) acc += __bfloat162float(wr[i]) * xs[i];
-  }
-  for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffffU, acc, off);
-  if (lane == 0) y[row] = acc + (bias != nullptr ? bias[row] : 0.0f);
 }
 
 __global__ void add_bias_kernel(float* y, const float* bias, std::int64_t rows, std::int64_t cols) {
@@ -297,10 +268,8 @@ void copy(const Context& ctx, float* dst, const float* src, std::int64_t n) {
 void linear(const Context& ctx, const float* x, std::int64_t m, std::int64_t k, const std::uint16_t* w_bf16,
             std::int64_t n, const float* bias, float* y) {
   auto stream = stream_of(ctx);
-  if (m == 1 && k <= 12288) {
-    constexpr int kBlock = 256, kWarps = kBlock / 32;
-    gemv_bf16_kernel<<<static_cast<unsigned>((n + kWarps - 1) / kWarps), kBlock, static_cast<std::size_t>(k) * 4,
-                       stream>>>(x, k, reinterpret_cast<const __nv_bfloat16*>(w_bf16), n, bias, y);
+  if (m == 1 && k <= kGemvMaxK) {
+    gemv_bf16(ctx, x, k, w_bf16, n, bias, y);
     return;
   }
   __nv_bfloat16* xb = nullptr;
@@ -673,58 +642,6 @@ __global__ void expert_topk_kernel(const float* logits, std::int64_t rows, std::
   }
 }
 
-constexpr int kWarp = 32;
-
-__device__ float warp_sum(float v) {
-  for (int off = kWarp / 2; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffU, v, off);
-  return v;
-}
-
-// Grid: (ffn rows / warps per block, k). One warp per output row of one
-// expert slot; x is staged once per block in shared memory, bf16-rounded.
-__global__ void expert_gate_up_kernel(const float* x, std::int64_t hidden, std::int64_t ffn,
-                                      const __nv_bfloat16* gate, const __nv_bfloat16* up, const std::int64_t* ids,
-                                      float* act) {
-  extern __shared__ float xs[];
-  for (std::int64_t i = threadIdx.x; i < hidden; i += blockDim.x) xs[i] = __bfloat162float(__float2bfloat16_rn(x[i]));
-  __syncthreads();
-  const int warps = blockDim.x / kWarp, lane = threadIdx.x % kWarp;
-  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * warps + threadIdx.x / kWarp;
-  const std::int64_t slot = blockIdx.y;
-  if (row >= ffn) return;
-  const std::int64_t e = ids[slot];
-  const __nv_bfloat16* g = gate + (e * ffn + row) * hidden;
-  const __nv_bfloat16* u = up + (e * ffn + row) * hidden;
-  float sg = 0.0f, su = 0.0f;
-  for (std::int64_t i = lane; i < hidden; i += kWarp) {
-    sg += __bfloat162float(g[i]) * xs[i];
-    su += __bfloat162float(u[i]) * xs[i];
-  }
-  sg = warp_sum(sg);
-  su = warp_sum(su);
-  if (lane == 0) {
-    const float a = sg / (1.0f + expf(-sg)) * su;
-    act[slot * ffn + row] = __bfloat162float(__float2bfloat16_rn(a));
-  }
-}
-
-__global__ void expert_down_kernel(const float* act, std::int64_t hidden, std::int64_t ffn, const __nv_bfloat16* down,
-                                   const std::int64_t* ids, const float* weights, std::int64_t k, float* out) {
-  const int warps = blockDim.x / kWarp, lane = threadIdx.x % kWarp;
-  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * warps + threadIdx.x / kWarp;
-  if (row >= hidden) return;
-  float total = 0.0f;
-  for (std::int64_t j = 0; j < k; ++j) {
-    const __nv_bfloat16* w = down + (ids[j] * hidden + row) * ffn;
-    const float* a = act + j * ffn;
-    float s = 0.0f;
-    for (std::int64_t i = lane; i < ffn; i += kWarp) s += __bfloat162float(w[i]) * a[i];
-    s = warp_sum(s);
-    total += weights[j] * s;
-  }
-  if (lane == 0) out[row] = total;
-}
-
 }  // namespace
 
 void gather_row_bf16(const Context& ctx, const std::uint16_t* table, std::int64_t one_index, std::int64_t cols,
@@ -739,21 +656,6 @@ void expert_topk(const Context& ctx, const float* logits, std::int64_t rows, std
   constexpr int kWarpsPerBlock = 8;
   expert_topk_kernel<<<static_cast<unsigned>((rows + kWarpsPerBlock - 1) / kWarpsPerBlock), kWarpsPerBlock * 32, 0,
                        stream_of(ctx)>>>(logits, rows, experts, k, ids, weights);
-}
-
-void expert_ffn_one(const Context& ctx, const float* x, std::int64_t hidden, std::int64_t ffn,
-                    const std::uint16_t* gate, const std::uint16_t* up, const std::uint16_t* down,
-                    const std::int64_t* ids, const float* weights, std::int64_t k, float* out) {
-  auto stream = stream_of(ctx);
-  float* act = nullptr;
-  check(cudaMallocAsync(&act, static_cast<std::size_t>(k * ffn) * 4, stream), "expert scratch");
-  constexpr int kBlock = 256, kWarps = kBlock / kWarp;
-  const dim3 grid(static_cast<unsigned>((ffn + kWarps - 1) / kWarps), static_cast<unsigned>(k));
-  expert_gate_up_kernel<<<grid, kBlock, static_cast<std::size_t>(hidden) * 4, stream>>>(
-      x, hidden, ffn, reinterpret_cast<const __nv_bfloat16*>(gate), reinterpret_cast<const __nv_bfloat16*>(up), ids, act);
-  expert_down_kernel<<<static_cast<unsigned>((hidden + kWarps - 1) / kWarps), kBlock, 0, stream>>>(
-      act, hidden, ffn, reinterpret_cast<const __nv_bfloat16*>(down), ids, weights, k, out);
-  check(cudaFreeAsync(act, stream), "expert scratch free");
 }
 
 }  // namespace uocr::cuda

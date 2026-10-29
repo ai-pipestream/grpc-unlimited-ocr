@@ -6,6 +6,7 @@
 #include <numeric>
 
 #include "backend/cuda/decode_ops.h"
+#include "backend/cuda/gemv_ops.h"
 #include "backend/cuda/ops.h"
 #include "backend/reference/ops.h"
 #include "model/decoder.h"
@@ -15,8 +16,8 @@ namespace {
 
 Array f32(const Context& ctx, std::int64_t n) { return Array(ctx, DType::kF32, n); }
 
-void apply(const Context& ctx, const Array& x, std::int64_t rows, const DeviceMatrix& w, Array& y) {
-  linear(ctx, x.f32(), rows, w.cols, w.data.bf16(), w.rows, nullptr, y.f32());
+void apply(const Context& ctx, const Array& x, std::int64_t rows, const DeviceWeight& w, Array& y) {
+  apply_weight(ctx, x.f32(), rows, w, nullptr, y.f32());
 }
 
 Array ids_on_device(const Context& ctx, const std::vector<std::int64_t>& ids) {
@@ -25,33 +26,23 @@ Array ids_on_device(const Context& ctx, const std::vector<std::int64_t>& ids) {
   return a;
 }
 
-// Concatenates one projection of every expert into a single bf16 array.
-Array stack(const Context& ctx, const WeightSource& w, const std::string& prefix, const std::string& proj,
-            std::int64_t experts, std::int64_t per_expert) {
-  Array out(ctx, DType::kBF16, experts * per_expert);
-  for (std::int64_t e = 0; e < experts; ++e) {
-    const Tensor t = w.get(std::format("{}.{}.{}.weight", prefix, e, proj));
-    out.upload(t.data(), per_expert, e * per_expert);
-  }
-  return out;
-}
-
 }  // namespace
 
 RouterParams CudaDecoder::default_router_params() { return Decoder::default_router(); }
 
-CudaDecoder::CudaDecoder(const Context& ctx, const WeightSource& w, const DecoderDims& dims, RouterParams router)
-    : ctx_(ctx), dims_(dims), router_(router), rope_(dims.head_dim) {
+CudaDecoder::CudaDecoder(const Context& ctx, const WeightSource& w, const DecoderDims& dims, RouterParams router,
+                         WeightFormat format)
+    : ctx_(ctx), dims_(dims), router_(router), rope_(dims.head_dim), format_(format) {
+  auto weight = [&](const std::string& name) { return device_weight(ctx, w.get(name), format); };
   embed_ = upload_tensor(ctx, w.get("model.embed_tokens.weight"), DType::kBF16);
   final_norm_ = vector(ctx, w, "model.norm.weight");
-  lm_head_ = matrix(ctx, w, "lm_head.weight");
+  lm_head_ = weight("lm_head.weight");
   inv_tok_ = f32(ctx, static_cast<std::int64_t>(rope_.inv_tok().size()));
   inv_tok_.upload(rope_.inv_tok().data(), inv_tok_.count());
   inv_page_ = f32(ctx, static_cast<std::int64_t>(rope_.inv_page().size()));
   inv_page_.upload(rope_.inv_page().data(), inv_page_.count());
   auto expert = [&](const std::string& p) {
-    return Expert{matrix(ctx, w, p + ".gate_proj.weight"), matrix(ctx, w, p + ".up_proj.weight"),
-                  matrix(ctx, w, p + ".down_proj.weight")};
+    return Expert{weight(p + ".gate_proj.weight"), weight(p + ".up_proj.weight"), weight(p + ".down_proj.weight")};
   };
   for (std::int64_t i = 0; i < dims.layers; ++i) {
     const std::string p = std::format("model.layers.{}.", i);
@@ -59,12 +50,12 @@ CudaDecoder::CudaDecoder(const Context& ctx, const WeightSource& w, const Decode
     Layer l;
     l.input_norm = vector(ctx, w, p + "input_layernorm.weight");
     l.post_norm = vector(ctx, w, p + "post_attention_layernorm.weight");
-    l.q = matrix(ctx, w, p + "self_attn.q_proj.weight");
-    l.k = matrix(ctx, w, p + "self_attn.k_proj.weight");
-    l.v = matrix(ctx, w, p + "self_attn.v_proj.weight");
-    l.o = matrix(ctx, w, p + "self_attn.o_proj.weight");
-    l.router_q = matrix(ctx, w, r + "q_proj.weight");
-    l.router_k = matrix(ctx, w, r + "k_proj.weight");
+    l.q = weight(p + "self_attn.q_proj.weight");
+    l.k = weight(p + "self_attn.k_proj.weight");
+    l.v = weight(p + "self_attn.v_proj.weight");
+    l.o = weight(p + "self_attn.o_proj.weight");
+    l.router_q = weight(r + "q_proj.weight");
+    l.router_k = weight(r + "k_proj.weight");
     l.router_q_norm = vector(ctx, w, r + "q_norm.weight");
     l.router_k_norm = vector(ctx, w, r + "k_norm.weight");
     l.head_cls = vector(ctx, w, r + "head_cls");
@@ -74,7 +65,7 @@ CudaDecoder::CudaDecoder(const Context& ctx, const WeightSource& w, const Decode
       // The gate scores in fp32, as upstream does, so expert choice is not
       // perturbed by bf16 inputs.
       l.moe_gate_f32 = vector(ctx, w, p + "mlp.gate.weight");
-      l.experts = stack_experts(ctx, w, p + "mlp.experts", dims);
+      l.experts = stack_experts(ctx, w, p + "mlp.experts", dims, format);
       l.shared = expert(p + "mlp.shared_experts");
     }
     layers_.push_back(std::move(l));
@@ -82,11 +73,14 @@ CudaDecoder::CudaDecoder(const Context& ctx, const WeightSource& w, const Decode
 }
 
 CudaDecoder::ExpertStack CudaDecoder::stack_experts(const Context& ctx, const WeightSource& w, const std::string& prefix,
-                                                   const DecoderDims& dims) {
-  const std::int64_t per = dims.expert_ffn * dims.hidden;
-  return ExpertStack{stack(ctx, w, prefix, "gate_proj", dims.routed_experts, per),
-                     stack(ctx, w, prefix, "up_proj", dims.routed_experts, per),
-                     stack(ctx, w, prefix, "down_proj", dims.routed_experts, per), dims.expert_ffn};
+                                                   const DecoderDims& dims, WeightFormat format) {
+  auto names = [&](const char* proj) {
+    std::vector<std::string> out;
+    for (std::int64_t e = 0; e < dims.routed_experts; ++e) out.push_back(std::format("{}.{}.{}.weight", prefix, e, proj));
+    return out;
+  };
+  return ExpertStack{stacked_weight(ctx, w, names("gate_proj"), format), stacked_weight(ctx, w, names("up_proj"), format),
+                     stacked_weight(ctx, w, names("down_proj"), format), dims.expert_ffn};
 }
 
 Tensor CudaDecoder::embed(const std::vector<std::int64_t>& ids) const {
@@ -130,13 +124,14 @@ void CudaDecoder::mlp(const Expert& e, const Array& x, std::int64_t rows, Array&
   apply(ctx_, g, rows, e.down, out);
 }
 
-void CudaDecoder::mlp(MlpView e, const Array& x, std::int64_t rows, Array& out) const {
-  const std::int64_t hidden = dims_.hidden;
-  Array g = f32(ctx_, rows * e.ffn), u = f32(ctx_, rows * e.ffn);
-  linear(ctx_, x.f32(), rows, hidden, e.gate, e.ffn, nullptr, g.f32());
-  linear(ctx_, x.f32(), rows, hidden, e.up, e.ffn, nullptr, u.f32());
-  silu_mul(ctx_, g.f32(), u.f32(), rows * e.ffn);
-  linear(ctx_, g.f32(), rows, e.ffn, e.down, hidden, nullptr, out.f32());
+void CudaDecoder::mlp(const ExpertStack& stack, std::int64_t expert, const Array& x, std::int64_t rows,
+                      Array& out) const {
+  const std::int64_t hidden = dims_.hidden, ffn = stack.ffn;
+  Array g = f32(ctx_, rows * ffn), u = f32(ctx_, rows * ffn);
+  apply_weight(ctx_, x.f32(), rows, stack.gate, nullptr, g.f32(), expert * ffn, ffn);
+  apply_weight(ctx_, x.f32(), rows, stack.up, nullptr, u.f32(), expert * ffn, ffn);
+  silu_mul(ctx_, g.f32(), u.f32(), rows * ffn);
+  apply_weight(ctx_, g.f32(), rows, stack.down, nullptr, out.f32(), expert * hidden, hidden);
 }
 
 void CudaDecoder::moe(const Layer& layer, const Array& h, std::int64_t rows, Array& out) const {
@@ -150,8 +145,13 @@ void CudaDecoder::moe(const Layer& layer, const Array& h, std::int64_t rows, Arr
     const std::int64_t k = dims_.experts_per_token;
     Array ids(ctx_, DType::kI64, k), wts = f32(ctx_, k), routed = f32(ctx_, hidden);
     expert_topk(ctx_, logits.f32(), 1, n_exp, k, ids.i64(), wts.f32());
-    expert_ffn_one(ctx_, h.f32(), hidden, stack.ffn, stack.gate.bf16(), stack.up.bf16(), stack.down.bf16(), ids.i64(),
-                   wts.f32(), k, routed.f32());
+    if (format_ == WeightFormat::kBf16) {
+      expert_ffn_one(ctx_, h.f32(), hidden, stack.ffn, stack.gate.bf16_at(0), stack.up.bf16_at(0),
+                     stack.down.bf16_at(0), ids.i64(), wts.f32(), k, routed.f32());
+    } else {
+      expert_ffn_one_q8(ctx_, h.f32(), hidden, stack.ffn, stack.gate.q8_at(0), stack.up.q8_at(0), stack.down.q8_at(0),
+                        ids.i64(), wts.f32(), k, routed.f32());
+    }
     mlp(*layer.shared, h, rows, out);
     add_inplace(ctx_, out.f32(), routed.f32(), hidden);
     return;
@@ -185,9 +185,7 @@ void CudaDecoder::moe(const Layer& layer, const Array& h, std::int64_t rows, Arr
     wts.upload(weight_of[static_cast<std::size_t>(e)].data(), n);
     Array in = f32(ctx_, n * hidden), res = f32(ctx_, n * hidden);
     gather_rows(ctx_, h.f32(), idx.i64(), n, hidden, in.f32());
-    const std::int64_t per = stack.ffn * hidden;
-    mlp(MlpView{stack.gate.bf16() + e * per, stack.up.bf16() + e * per, stack.down.bf16() + e * per, stack.ffn}, in, n,
-        res);
+    mlp(stack, e, in, n, res);
     scatter_add_rows(ctx_, routed.f32(), idx.i64(), wts.f32(), res.f32(), n, hidden);
   }
   add_inplace(ctx_, out.f32(), routed.f32(), rows * hidden);
@@ -202,11 +200,11 @@ void CudaDecoder::attention(const Layer& layer, std::size_t index, const Array& 
   float* v_rows = cache.v.f32() + first_pos * width;
   float* rk_rows = cache.router_k.f32() + first_pos * d;
   Array q = f32(ctx_, rows * width), rq = f32(ctx_, rows * d);
-  linear(ctx_, h.f32(), rows, layer.q.cols, layer.q.data.bf16(), width, nullptr, q.f32());
-  linear(ctx_, h.f32(), rows, layer.k.cols, layer.k.data.bf16(), width, nullptr, k_rows);
-  linear(ctx_, h.f32(), rows, layer.v.cols, layer.v.data.bf16(), width, nullptr, v_rows);
-  linear(ctx_, h.f32(), rows, layer.router_q.cols, layer.router_q.data.bf16(), d, nullptr, rq.f32());
-  linear(ctx_, h.f32(), rows, layer.router_k.cols, layer.router_k.data.bf16(), d, nullptr, rk_rows);
+  apply_weight(ctx_, h.f32(), rows, layer.q, nullptr, q.f32());
+  apply_weight(ctx_, h.f32(), rows, layer.k, nullptr, k_rows);
+  apply_weight(ctx_, h.f32(), rows, layer.v, nullptr, v_rows);
+  apply_weight(ctx_, h.f32(), rows, layer.router_q, nullptr, rq.f32());
+  apply_weight(ctx_, h.f32(), rows, layer.router_k, nullptr, rk_rows);
   router_norm(ctx_, rq.f32(), layer.router_q_norm.f32(), rows, d, static_cast<float>(dims_.rms_norm_eps));
   router_norm(ctx_, rk_rows, layer.router_k_norm.f32(), rows, d, static_cast<float>(dims_.rms_norm_eps));
   const auto n_tok = static_cast<std::int64_t>(rope_.inv_tok().size());

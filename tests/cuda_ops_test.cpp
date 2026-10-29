@@ -12,6 +12,8 @@
 #include "model/attention_plan.h"
 #include "model/block_router.h"
 #include "model/decoder.h"
+#include "backend/cuda/gemv_ops.h"
+#include "model/cuda/device_weight.h"
 #include "model/page_rope.h"
 #include "tensor/dtype.h"
 
@@ -181,6 +183,29 @@ int main() {
       cu::Array out(ctx, cu::DType::kF32, 3 * 16);
       cu::block_summaries(ctx, dk.f32(), 70, 16, dh.f32(), 32, out.f32());
       expect("block_summaries", max_rel(out.download(), want), 1e-5);
+    }
+    {  // int8 weights: quantisation error is bounded, and the int8 product equals
+       // the fp32 product with the dequantised weights
+      const Tensor w = random({40, 96}, 0.1f), x = random({1, 96}), x3 = random({3, 96});
+      std::vector<std::int8_t> q(40 * 96);
+      std::vector<float> sc(40 * 3);
+      cu::quantize_q8_rows(w.data(), 40, 96, q.data(), sc.data());
+      Tensor deq({40, 96});
+      double worst_q = 0.0, peak = 0.0;
+      for (std::int64_t i = 0; i < w.numel(); ++i) {
+        deq.data()[i] = static_cast<float>(q[static_cast<std::size_t>(i)]) * sc[static_cast<std::size_t>(i / 32)];
+        worst_q = std::max(worst_q, std::fabs(static_cast<double>(deq.data()[i]) - w.data()[i]));
+        peak = std::max(peak, std::fabs(static_cast<double>(w.data()[i])));
+      }
+      require(worst_q <= peak / 254.0 + 1e-7, "int8 rounding error is at most half a step");
+      const auto dw = cu::device_weight(ctx, w, cu::WeightFormat::kInt8);
+      for (const Tensor* in : {&x, &x3}) {
+        const std::int64_t m = in->dim(0);
+        auto dx = up(ctx, *in);
+        cu::Array dy(ctx, cu::DType::kF32, m * 40);
+        cu::apply_weight(ctx, dx.f32(), m, dw, nullptr, dy.f32());
+        expect(m == 1 ? "int8 gemv" : "int8 linear", max_rel(dy.download(), ref::linear(bf16_rounded(*in), m == 1 ? deq : bf16_rounded(deq))), 1e-5);
+      }
     }
     {  // device block routing against the host selector and key mask
       RouterParams rp = Decoder::default_router();

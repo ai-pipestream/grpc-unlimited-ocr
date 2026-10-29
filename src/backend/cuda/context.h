@@ -82,7 +82,7 @@ class PinnedBuffer {
 void copy_to_device(const Context& ctx, void* device_dst, const PinnedBuffer& src, std::size_t bytes);
 void copy_to_host(const Context& ctx, PinnedBuffer& dst, const void* device_src, std::size_t bytes);
 
-enum class DType : std::uint8_t { kF32, kBF16, kI64 };
+enum class DType : std::uint8_t { kF32, kBF16, kI64, kI8 };
 
 // Device memory of `count` elements of one type. Contents are undefined
 // until written.
@@ -100,6 +100,8 @@ class Array {
   void upload(const float* host, std::int64_t count, std::int64_t offset = 0);
   // Host indices in, for kI64 arrays.
   void upload(const std::int64_t* host, std::int64_t count, std::int64_t offset = 0);
+  // Host bytes in, for kI8 arrays.
+  void upload(const std::int8_t* host, std::int64_t count, std::int64_t offset = 0);
   // Device contents widened to fp32 (synchronises the stream).
   std::vector<float> download() const;
   void zero();
@@ -108,6 +110,7 @@ class Array {
   float* f32() const;
   std::uint16_t* bf16() const;
   std::int64_t* i64() const;
+  std::int8_t* i8() const;
   std::int64_t count() const { return count_; }
   DType type() const { return type_; }
   const Context* context() const { return ctx_; }

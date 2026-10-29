@@ -12,13 +12,14 @@ namespace uocr::cuda {
 
 void CudaDecoder::decode_attention(const Layer& layer, Cache& cache) {
   const std::int64_t width = dims_.heads * dims_.head_dim, hd = dims_.head_dim, d = dims_.index_dim;
+  (void)width;
   const auto* state = static_cast<const StepState*>(step_.state.data());
   const float* h = step_.h.f32();
-  linear(ctx_, h, 1, layer.q.cols, layer.q.data.bf16(), width, nullptr, step_.q.f32());
-  linear(ctx_, h, 1, layer.k.cols, layer.k.data.bf16(), width, nullptr, step_.k.f32());
-  linear(ctx_, h, 1, layer.v.cols, layer.v.data.bf16(), width, nullptr, step_.v.f32());
-  linear(ctx_, h, 1, layer.router_q.cols, layer.router_q.data.bf16(), d, nullptr, step_.rq.f32());
-  linear(ctx_, h, 1, layer.router_k.cols, layer.router_k.data.bf16(), d, nullptr, step_.rk.f32());
+  apply_weight(ctx_, h, 1, layer.q, nullptr, step_.q.f32());
+  apply_weight(ctx_, h, 1, layer.k, nullptr, step_.k.f32());
+  apply_weight(ctx_, h, 1, layer.v, nullptr, step_.v.f32());
+  apply_weight(ctx_, h, 1, layer.router_q, nullptr, step_.rq.f32());
+  apply_weight(ctx_, h, 1, layer.router_k, nullptr, step_.rk.f32());
   const float eps = static_cast<float>(dims_.rms_norm_eps);
   router_norm(ctx_, step_.rq.f32(), layer.router_q_norm.f32(), 1, d, eps);
   router_norm(ctx_, step_.rk.f32(), layer.router_k_norm.f32(), 1, d, eps);
@@ -40,7 +41,7 @@ void CudaDecoder::decode_attention(const Layer& layer, Cache& cache) {
              step_.mask.f32());
   attend_step(ctx_, step_.q.f32(), cache.k.f32(), cache.v.f32(), dims_.heads, hd, step_.mask.f32(),
               1.0f / std::sqrt(static_cast<float>(hd)), state, step_.scores.f32(), capacity_, step_.merged.f32());
-  linear(ctx_, step_.merged.f32(), 1, layer.o.cols, layer.o.data.bf16(), dims_.hidden, nullptr, step_.delta.f32());
+  apply_weight(ctx_, step_.merged.f32(), 1, layer.o, nullptr, step_.delta.f32());
 }
 
 void CudaDecoder::decode_body() {
@@ -65,7 +66,7 @@ void CudaDecoder::decode_body() {
   }
   copy(ctx_, step_.h.f32(), step_.x.f32(), hidden);
   rms_norm(ctx_, step_.h.f32(), final_norm_.f32(), 1, hidden, eps);
-  linear(ctx_, step_.h.f32(), 1, lm_head_.cols, lm_head_.data.bf16(), lm_head_.rows, nullptr, step_.logits.f32());
+  apply_weight(ctx_, step_.h.f32(), 1, lm_head_, nullptr, step_.logits.f32());
 }
 
 }  // namespace uocr::cuda

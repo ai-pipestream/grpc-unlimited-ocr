@@ -10,7 +10,15 @@
 
 namespace uocr::cuda {
 namespace {
-std::size_t element_bytes(DType t) { return t == DType::kBF16 ? 2 : t == DType::kF32 ? 4 : 8; }
+std::size_t element_bytes(DType t) {
+  switch (t) {
+    case DType::kI8: return 1;
+    case DType::kBF16: return 2;
+    case DType::kF32: return 4;
+    case DType::kI64: return 8;
+  }
+  return 1;
+}
 }  // namespace
 
 void check(cudaError_t status, const char* what) {
@@ -150,6 +158,19 @@ void Array::upload(const std::int64_t* host, std::int64_t count, std::int64_t of
   check(cudaStreamSynchronize(stream), "upload sync");
 }
 
+std::int8_t* Array::i8() const {
+  if (type_ != DType::kI8) throw std::logic_error("Array: not int8");
+  return static_cast<std::int8_t*>(data_);
+}
+
+void Array::upload(const std::int8_t* host, std::int64_t count, std::int64_t offset) {
+  if (offset < 0 || offset + count > count_) throw std::out_of_range("Array::upload past the end");
+  auto stream = ctx_->impl().stream;
+  check(cudaMemcpyAsync(i8() + offset, host, static_cast<std::size_t>(count), cudaMemcpyHostToDevice, stream),
+        "upload i8");
+  check(cudaStreamSynchronize(stream), "upload sync");
+}
+
 std::uint16_t* Array::bf16() const {
   if (type_ != DType::kBF16) throw std::logic_error("Array: not bf16");
   return static_cast<std::uint16_t*>(data_);
@@ -173,7 +194,7 @@ void Array::upload(const float* host, std::int64_t count, std::int64_t offset) {
 }
 
 std::vector<float> Array::download() const {
-  if (type_ == DType::kI64) throw std::logic_error("Array::download: int64 arrays are not widened to fp32");
+  if (type_ == DType::kI64 || type_ == DType::kI8) throw std::logic_error("Array::download: integer arrays are not widened");
   auto stream = ctx_->impl().stream;
   std::vector<float> out(static_cast<std::size_t>(count_));
   if (type_ == DType::kF32) {

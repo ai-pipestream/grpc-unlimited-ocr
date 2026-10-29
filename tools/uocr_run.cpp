@@ -71,7 +71,7 @@ void save_run(const std::filesystem::path& dir, const Tokenizer& tok, const Gene
 }
 
 int usage() {
-  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] [--backend reference|cuda] page...");
+  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] [--backend reference|cuda] [--weights bf16|int8] page...");
   return 64;
 }
 
@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
   std::vector<std::string> pages;
   std::string save_dir;
   std::string backend = "reference";
+  std::string weights_format = "bf16";
   PreprocessOptions pre;
   GenerationConfig gen;
   for (int i = 1; i < argc; ++i) {
@@ -97,6 +98,7 @@ int main(int argc, char** argv) {
     else if (a == "--max-new") gen.max_new_tokens = std::stoll(value());
     else if (a == "--save") save_dir = value();
     else if (a == "--backend") backend = value();
+    else if (a == "--weights") weights_format = value();
     else if (a.starts_with("--")) return usage();
     else pages.push_back(a);
   }
@@ -125,7 +127,13 @@ int main(int argc, char** argv) {
     } else if (backend == "cuda") {
       cuda_ctx = std::make_unique<cuda::Context>(0);
       vision_model = std::make_unique<cuda::CudaVisionEncoder>(*cuda_ctx, weights);
-      decoder_model = std::make_unique<cuda::CudaDecoder>(*cuda_ctx, weights);
+      if (weights_format != "bf16" && weights_format != "int8") {
+        std::println(stderr, "--weights must be bf16 or int8");
+        return 64;
+      }
+      decoder_model = std::make_unique<cuda::CudaDecoder>(
+          *cuda_ctx, weights, DecoderDims{}, cuda::CudaDecoder::default_router_params(),
+          weights_format == "int8" ? cuda::WeightFormat::kInt8 : cuda::WeightFormat::kBf16);
 #endif
     } else {
       std::println(stderr, "unknown or unbuilt backend: {}", backend);

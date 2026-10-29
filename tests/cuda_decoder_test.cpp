@@ -9,6 +9,7 @@
 #include "backend/cuda/context.h"
 #include "check.h"
 #include "model/cuda/cuda_decoder.h"
+#include "model/cuda/device_weight.h"
 #include "model/decoder.h"
 #include "runtime/prompt_builder.h"
 #include "tensor/dtype.h"
@@ -25,12 +26,12 @@ DecoderDims tiny() {
   d.layers = 2;
   d.heads = 2;
   d.head_dim = 16;
-  d.dense_ffn = 48;
+  d.dense_ffn = 64;  // widths are multiples of 32 so int8 weights apply
   d.routed_experts = 8;
   d.experts_per_token = 3;
   d.shared_experts = 1;
-  d.expert_ffn = 24;
-  d.index_dim = 16;
+  d.expert_ffn = 32;
+  d.index_dim = 16;  // equal to head_dim, as in the real model (they share a rope table)
   return d;
 }
 
@@ -53,6 +54,38 @@ TableWeights weights_for(const DecoderDims& d) {
   return table;
 }
 
+// The int8 decoder quantises every projection matrix (not norms, the token
+// embedding, the expert gate or head_cls); the reference runs on those
+// matrices dequantised, so the comparison checks the kernels, not the
+// rounding.
+TableWeights dequantised(const DecoderDims& d) {
+  ModelDims md;
+  md.decoder = d;
+  const TableWeights src = weights_for(d);
+  TableWeights out;
+  for (const auto& spec : unlimited_ocr2_tensors(md)) {
+    if (!spec.name.starts_with("model.layers") && !spec.name.starts_with("model.embed") &&
+        spec.name != "model.norm.weight" && spec.name != "lm_head.weight") {
+      continue;
+    }
+    Tensor t = src.get(spec.name);
+    const bool quantised = t.rank() == 2 && !spec.name.ends_with("embed_tokens.weight") &&
+                           !spec.name.ends_with("mlp.gate.weight");
+    if (quantised) {
+      const std::int64_t rows = t.dim(0), cols = t.dim(1);
+      std::vector<std::int8_t> q(static_cast<std::size_t>(rows * cols));
+      std::vector<float> sc(static_cast<std::size_t>(rows * cols / 32));
+      cuda::quantize_q8_rows(t.data(), rows, cols, q.data(), sc.data());
+      for (std::int64_t i = 0; i < t.numel(); ++i) {
+        t.data()[i] = bf16_to_f32(f32_to_bf16(static_cast<float>(q[static_cast<std::size_t>(i)]) *
+                                              sc[static_cast<std::size_t>(i / 32)]));
+      }
+    }
+    out.put(spec.name, std::move(t));
+  }
+  return out;
+}
+
 double rel(const std::vector<float>& a, const std::vector<float>& b) {
   double worst = 0.0, scale = 1e-12;
   for (std::size_t i = 0; i < a.size(); ++i) {
@@ -64,19 +97,19 @@ double rel(const std::vector<float>& a, const std::vector<float>& b) {
 
 }  // namespace
 
-int main() {
-  if (cuda::device_count() == 0) return skip("no CUDA device");
-  return run_tests([] {
+void compare(cuda::WeightFormat format, double tolerance) {
+    std::println("weights {}", format == cuda::WeightFormat::kBf16 ? "bf16" : "int8");
     const DecoderDims d = tiny();
     const auto w = weights_for(d);
+    const auto reference_weights = format == cuda::WeightFormat::kBf16 ? weights_for(d) : dequantised(d);
     RouterParams rp = Decoder::default_router();
     rp.block_size = 4;
     rp.local_blocks = 1;
     rp.idx_scale = 4.0f;
-    const Decoder ref_model(w, d, rp);
+    const Decoder ref_model(reference_weights, d, rp);
     ReferenceDecoder ref(ref_model);
     const cuda::Context ctx(0);
-    cuda::CudaDecoder dev(ctx, w, d, rp);
+    cuda::CudaDecoder dev(ctx, w, d, rp, format);
 
     const auto prompt = build_prompt({12, 12});
     const Tensor embeds = ref.embed(prompt);
@@ -87,7 +120,7 @@ int main() {
     const PromptLayout layout = layout_prompt(prompt);
     const double first = rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout));
     std::println("prefill logits: relative error {:.2e}", first);
-    require(first < 2e-2, "prefill logits agree at bf16 tolerance");
+    require(first < tolerance, "prefill logits agree");
 
     DecodeState state(layout, prompt);
     const BlockPages blocks = block_image_pages(layout, rp.block_size);
@@ -99,7 +132,14 @@ int main() {
       const RopeCoord c = state.advance(t);
       const double e = rel(dev.step(t, c, state.query_page(), blocks), ref.step(t, c, state.query_page(), blocks));
       if (t < 128 || t == PromptTokens{}.page) std::println("step {:>6}: relative error {:.2e}", t, e);
-      require(e < 2e-2, "decode logits agree at bf16 tolerance");
+      require(e < tolerance, "decode logits agree");
     }
+}
+
+int main() {
+  if (cuda::device_count() == 0) return skip("no CUDA device");
+  return run_tests([] {
+    compare(cuda::WeightFormat::kBf16, 2e-2);
+    compare(cuda::WeightFormat::kInt8, 2e-2);
   });
 }
