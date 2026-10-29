@@ -20,22 +20,34 @@ struct PageViews {
   std::int64_t tiles_high = 1;
 };
 
-class VisionEncoder {
+// Anything that turns a page into its image-token embeddings.
+class VisionModel {
  public:
-  explicit VisionEncoder(const WeightSource& weights, const ModelDims& dims = {});
+  virtual ~VisionModel() = default;
 
   // Projected features of one view: [g * g, hidden].
-  Tensor encode_view(const Tensor& image) const;
+  virtual Tensor encode_view(const Tensor& image) const = 0;
 
   // The page's image-token embeddings in prompt order: tile rows (each
   // followed by the newline), then the global rows (each followed by the
   // newline), then the separator. Base mode: 16 x 17 + 1 = 273 rows.
   Tensor encode_page(const PageViews& page) const;
 
+ protected:
+  Tensor newline_, separator_;
+};
+
+// The reference backend's vision encoder.
+class VisionEncoder final : public VisionModel {
+ public:
+  explicit VisionEncoder(const WeightSource& weights, const ModelDims& dims = {});
+
+  Tensor encode_view(const Tensor& image) const override;
+
  private:
   SamEncoder sam_;
   ClipEncoder clip_;
-  Tensor projector_w_, projector_b_, newline_, separator_;
+  Tensor projector_w_, projector_b_;
 };
 
 // Image tokens a page contributes to the prompt; must equal

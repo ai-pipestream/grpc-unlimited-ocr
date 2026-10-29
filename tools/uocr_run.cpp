@@ -103,7 +103,8 @@ int main(int argc, char** argv) {
     const Tokenizer tokenizer = Tokenizer::load(std::filesystem::path(models) / "tokenizer.json");
     const CheckpointWeights weights(shards);
     const VisionEncoder vision(weights);
-    const Decoder decoder(weights);
+    const Decoder reference_decoder(weights);
+    ReferenceDecoder decoder(reference_decoder);
     std::vector<PageViews> views;
     for (const auto& p : pages) views.push_back(preprocess_page(decode_image(read_file(p)), pre));
     const auto t1 = std::chrono::steady_clock::now();

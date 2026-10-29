@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "model/block_router.h"
+#include "model/decoder_model.h"
 #include "model/feed_forward.h"
 #include "model/page_layout.h"
 #include "model/page_rope.h"
@@ -70,6 +71,27 @@ class Decoder {
   PageRope rope_;
   Tensor embed_tokens_, final_norm_, lm_head_;
   std::vector<Layer> layers_;
+};
+
+// The reference decoder as a DecoderModel: it owns the cache of the
+// document being decoded.
+class ReferenceDecoder final : public DecoderModel {
+ public:
+  explicit ReferenceDecoder(const Decoder& decoder) : decoder_(decoder) {}
+
+  Tensor embed(const std::vector<std::int64_t>& ids) const override { return decoder_.embed(ids); }
+  std::vector<float> prefill(const Tensor& embeds, const PromptLayout& layout) override {
+    return decoder_.prefill(embeds, layout, cache_);
+  }
+  std::vector<float> step(std::int64_t token, RopeCoord coord, std::int64_t query_page,
+                          const BlockPages& prompt_blocks) override {
+    return decoder_.step(token, coord, query_page, prompt_blocks, cache_);
+  }
+  std::int64_t block_size() const override { return Decoder::default_router().block_size; }
+
+ private:
+  const Decoder& decoder_;
+  DecoderCache cache_;
 };
 
 // Candidate blocks for a query on image page `page` (-1 = none): the key

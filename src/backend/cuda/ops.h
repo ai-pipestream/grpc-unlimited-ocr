@@ -61,6 +61,11 @@ void gather_rows(const Context& ctx, const float* src, const std::int64_t* index
                  float* dst);
 void scatter_add_rows(const Context& ctx, float* dst, const std::int64_t* index, const float* weight, const float* src,
                       std::int64_t rows, std::int64_t cols);
+// out[r] = a[r] (ca columns) followed by b[r] (cb columns).
+void concat_cols(const Context& ctx, const float* a, std::int64_t ca, const float* b, std::int64_t cb, std::int64_t rows,
+                 float* out);
+// dst = src for n elements (device to device).
+void copy(const Context& ctx, float* dst, const float* src, std::int64_t n);
 // bf16 table rows -> fp32 rows (token embeddings).
 void gather_rows_bf16(const Context& ctx, const std::uint16_t* table, const std::int64_t* index, std::int64_t rows,
                       std::int64_t cols, float* dst);

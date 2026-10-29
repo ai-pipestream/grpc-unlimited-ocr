@@ -95,8 +95,9 @@ int main() {
     GenerationConfig gc;
     gc.max_new_tokens = 12;
     gc.max_page_tokens = 4;
-    const auto a = generate_from_embeddings(decoder, prompt, embeds, gc);
-    const auto b = generate_from_embeddings(decoder, prompt, embeds, gc);
+    ReferenceDecoder first_run(decoder), second_run(decoder);
+    const auto a = generate_from_embeddings(first_run, prompt, embeds, gc);
+    const auto b = generate_from_embeddings(second_run, prompt, embeds, gc);
     require(a.tokens == b.tokens, "greedy generation is deterministic");
     const std::size_t eos = a.finish == FinishReason::kEndOfSequence ? 1 : 0;
     require(a.trace.size() == a.tokens.size() + eos, "one trace row per step, EOS step included");

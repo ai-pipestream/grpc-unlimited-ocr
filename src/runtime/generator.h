@@ -8,7 +8,7 @@
 #include <functional>
 #include <vector>
 
-#include "model/decoder.h"
+#include "model/decoder_model.h"
 #include "model/vision_encoder.h"
 #include "runtime/logit_policy.h"
 #include "runtime/prompt_builder.h"
@@ -48,12 +48,12 @@ struct GenerationResult {
 // included); return false to stop early.
 using TokenSink = std::function<bool(const GeneratedToken& step)>;
 
-GenerationResult generate(const VisionEncoder& vision, const Decoder& decoder, const std::vector<PageViews>& pages,
+GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, const std::vector<PageViews>& pages,
                           const GenerationConfig& config, const TokenSink& sink = {});
 
 // The same loop from prompt embeddings already built (tests drive the
 // decoder this way without a vision encoder).
-GenerationResult generate_from_embeddings(const Decoder& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
+GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
                                           const GenerationConfig& config, const TokenSink& sink = {});
 
 }  // namespace uocr

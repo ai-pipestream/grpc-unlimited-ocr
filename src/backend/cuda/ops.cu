@@ -240,7 +240,25 @@ __global__ void block_summary_kernel(const float* keys, std::int64_t s, std::int
   }
 }
 
+__global__ void concat_kernel(const float* a, std::int64_t ca, const float* b, std::int64_t cb, std::int64_t rows,
+                              float* out) {
+  const std::int64_t w = ca + cb;
+  const std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
+  if (i >= rows * w) return;
+  const std::int64_t r = i / w, c = i % w;
+  out[i] = c < ca ? a[r * ca + c] : b[r * cb + (c - ca)];
+}
+
 }  // namespace
+
+void concat_cols(const Context& ctx, const float* a, std::int64_t ca, const float* b, std::int64_t cb, std::int64_t rows,
+                 float* out) {
+  concat_kernel<<<blocks_for(rows * (ca + cb)), kThreads, 0, stream_of(ctx)>>>(a, ca, b, cb, rows, out);
+}
+
+void copy(const Context& ctx, float* dst, const float* src, std::int64_t n) {
+  check(cudaMemcpyAsync(dst, src, static_cast<std::size_t>(n) * 4, cudaMemcpyDeviceToDevice, stream_of(ctx)), "copy");
+}
 
 void linear(const Context& ctx, const float* x, std::int64_t m, std::int64_t k, const std::uint16_t* w_bf16,
             std::int64_t n, const float* bias, float* y) {

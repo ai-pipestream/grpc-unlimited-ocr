@@ -16,7 +16,7 @@ float log_softmax_at(const std::vector<float>& logits, std::int64_t index) {
 
 }  // namespace
 
-GenerationResult generate(const VisionEncoder& vision, const Decoder& decoder, const std::vector<PageViews>& pages,
+GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, const std::vector<PageViews>& pages,
                           const GenerationConfig& config, const TokenSink& sink) {
   std::vector<Tensor> page_tokens;
   std::vector<std::int64_t> counts;
@@ -36,11 +36,11 @@ GenerationResult generate(const VisionEncoder& vision, const Decoder& decoder, c
   return generate_from_embeddings(decoder, std::move(prompt), embeds, config, sink);
 }
 
-GenerationResult generate_from_embeddings(const Decoder& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
+GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
                                           const GenerationConfig& config, const TokenSink& sink) {
   const PromptTokens tokens;
   const PromptLayout layout = layout_prompt(prompt);
-  const BlockPages blocks = block_image_pages(layout, Decoder::default_router().block_size);
+  const BlockPages blocks = block_image_pages(layout, decoder.block_size());
   DecodeState state(layout, prompt);
   LogitPolicy policy(LogitPolicyConfig{
       config.ngram_size, config.ngram_window, {},
@@ -49,8 +49,7 @@ GenerationResult generate_from_embeddings(const Decoder& decoder, std::vector<st
 
   GenerationResult result;
   result.prompt = std::move(prompt);
-  DecoderCache cache;
-  std::vector<float> logits = decoder.prefill(embeds, layout, cache);
+  std::vector<float> logits = decoder.prefill(embeds, layout);
   const auto prompt_len = static_cast<std::int64_t>(result.prompt.size());
   for (std::int64_t step = 0; step < config.max_new_tokens; ++step) {
     const std::vector<float> raw = logits;
@@ -73,7 +72,7 @@ GenerationResult generate_from_embeddings(const Decoder& decoder, std::vector<st
       return result;
     }
     const RopeCoord coord = state.advance(next);
-    logits = decoder.step(next, coord, state.query_page(), blocks, cache);
+    logits = decoder.step(next, coord, state.query_page(), blocks);
   }
   result.finish = FinishReason::kTokenBudget;
   return result;

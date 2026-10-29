@@ -80,7 +80,8 @@ int main() {
     std::println("projector features: relative error {:.3e}", err);
     require(err < 1e-3, "vision features match the reference");
 
-    const Decoder decoder(weights);
+    const Decoder reference_decoder(weights);
+    ReferenceDecoder decoder(reference_decoder);
     GenerationConfig config;
     const auto golden_tokens = ids_of(golden / "tokens.txt");
     config.max_new_tokens = static_cast<std::int64_t>(golden_tokens.size()) + 1;

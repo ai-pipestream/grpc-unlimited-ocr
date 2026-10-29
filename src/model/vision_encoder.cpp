@@ -25,9 +25,10 @@ VisionEncoder::VisionEncoder(const WeightSource& weights, const ModelDims& dims)
     : sam_(weights, dims.sam),
       clip_(weights, dims.clip),
       projector_w_(weights.get("model.projector.layers.weight")),
-      projector_b_(weights.get("model.projector.layers.bias")),
-      newline_(weights.get("model.image_newline")),
-      separator_(weights.get("model.view_seperator")) {}
+      projector_b_(weights.get("model.projector.layers.bias")) {
+  newline_ = weights.get("model.image_newline");
+  separator_ = weights.get("model.view_seperator");
+}
 
 Tensor VisionEncoder::encode_view(const Tensor& image) const {
   const Tensor sam = sam_.forward(image);  // [1024, g, g]
@@ -42,7 +43,7 @@ Tensor VisionEncoder::encode_view(const Tensor& image) const {
   return ref::linear(joined, projector_w_, &projector_b_);
 }
 
-Tensor VisionEncoder::encode_page(const PageViews& page) const {
+Tensor VisionModel::encode_page(const PageViews& page) const {
   const std::int64_t width = newline_.numel();
   std::vector<float> out;
   const bool tiled = !page.tiles.empty();
