@@ -34,6 +34,12 @@ FetchContent_Declare(nlohmann_json
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(nlohmann_json)
 
+# stb_image (public domain or MIT): PNG and JPEG decode of page rasters.
+FetchContent_Declare(stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20)
+FetchContent_MakeAvailable(stb)
+
 add_library(uocr_weights STATIC
   src/tensor/dtype.cpp
   src/weights/safetensors.cpp
@@ -48,12 +54,29 @@ add_library(uocr_reference STATIC
   src/model/weight_source.cpp
   src/model/sam_encoder.cpp
   src/model/clip_encoder.cpp
-  src/model/vision_encoder.cpp)
-target_link_libraries(uocr_reference PUBLIC uocr_weights Threads::Threads)
+  src/model/vision_encoder.cpp
+  src/model/page_rope.cpp
+  src/model/page_layout.cpp
+  src/model/block_router.cpp
+  src/model/feed_forward.cpp
+  src/model/decoder.cpp
+  src/tokenizer/tokenizer.cpp
+  src/runtime/prompt_builder.cpp
+  src/runtime/logit_policy.cpp
+  src/runtime/generator.cpp
+  src/image/resample.cpp
+  src/image/page_preprocess.cpp)
+target_link_libraries(uocr_reference PUBLIC uocr_weights Threads::Threads PRIVATE nlohmann_json::nlohmann_json)
+# stb is third-party C; keep its headers out of the first-party warning set.
+target_include_directories(uocr_reference SYSTEM PRIVATE ${stb_SOURCE_DIR})
+
+add_executable(uocr-run tools/uocr_run.cpp)
+target_link_libraries(uocr-run PRIVATE uocr_reference)
 
 if(BUILD_TESTING)
   foreach(test_name dtype_test safetensors_test architecture_test checkpoint_test ops_test vision_test
-                    vision_checkpoint_test)
+                    vision_checkpoint_test page_layout_test router_test logit_policy_test tokenizer_test
+                    decoder_test image_test)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_link_libraries(${test_name} PRIVATE uocr_reference)
     target_include_directories(${test_name} PRIVATE tests)

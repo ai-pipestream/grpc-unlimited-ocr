@@ -24,7 +24,8 @@ to gRParse, which dials it as `GRPARSE_UNLIMITED_OCR_TARGET`.
   tested against it. A fast backend never changes output without a
   reference-backend test showing why.
 - **Typed wire only.** No JSON strings, maps or blobs on the gRPC contract.
-  JSON is read in one place: the safetensors header and shard index.
+  JSON is read only from model files at startup: the safetensors header,
+  the shard index and `tokenizer.json`.
 - **C++23, no god classes:** files under about 800 lines, functions under
   about 60 unless they are a flat table.
 - **Tests:** plain-main executables under `tests/`, registered with CTest;
@@ -40,5 +41,11 @@ to gRParse, which dials it as `GRPARSE_UNLIMITED_OCR_TARGET`.
 |---|---|
 | `src/tensor/` | element types and conversions |
 | `src/weights/` | safetensors mapping, the shard index, the architecture table |
+| `src/backend/reference/` | the fp32 oracle backend: ops and the thread splitter |
+| `src/model/` | SAM, CLIP, projector, page layout, page rope, block router, MoE, decoder |
+| `src/runtime/` | prompt, logit policy (n-gram ban, page guard), generation loop |
+| `src/image/` | PNG/JPEG decode, Pillow-exact bicubic, letterbox and tiles |
+| `src/tokenizer/` | byte-level BPE decoding and special ids |
+| `tools/uocr_run.cpp` | developer runner: page files in, raw model output out |
 | `models/MANIFEST` | the pinned upstream files |
 | `docs/design.md` | the design; keep it in step with the code |
