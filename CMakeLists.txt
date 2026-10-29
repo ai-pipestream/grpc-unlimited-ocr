@@ -21,6 +21,8 @@ if(UOCR_SANITIZE)
   target_link_options(uocr_flags INTERFACE -fsanitize=${UOCR_SANITIZE})
 endif()
 
+find_package(Threads REQUIRED)
+
 include(FetchContent)
 
 # JSON appears in exactly one place: the safetensors file header and the
@@ -40,10 +42,20 @@ add_library(uocr_weights STATIC
 target_include_directories(uocr_weights PUBLIC src)
 target_link_libraries(uocr_weights PUBLIC uocr_flags PRIVATE nlohmann_json::nlohmann_json)
 
+# The reference backend and the model code written against it.
+add_library(uocr_reference STATIC
+  src/backend/reference/ops.cpp
+  src/model/weight_source.cpp
+  src/model/sam_encoder.cpp
+  src/model/clip_encoder.cpp
+  src/model/vision_encoder.cpp)
+target_link_libraries(uocr_reference PUBLIC uocr_weights Threads::Threads)
+
 if(BUILD_TESTING)
-  foreach(test_name dtype_test safetensors_test architecture_test checkpoint_test)
+  foreach(test_name dtype_test safetensors_test architecture_test checkpoint_test ops_test vision_test
+                    vision_checkpoint_test)
     add_executable(${test_name} tests/${test_name}.cpp)
-    target_link_libraries(${test_name} PRIVATE uocr_weights)
+    target_link_libraries(${test_name} PRIVATE uocr_reference)
     target_include_directories(${test_name} PRIVATE tests)
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES SKIP_RETURN_CODE 77
