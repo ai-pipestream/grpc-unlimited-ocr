@@ -29,6 +29,9 @@ class PageRope {
   void apply(Tensor& x, const std::vector<RopeCoord>& coords) const;
 
   std::int64_t dim() const { return dim_; }
+  std::int64_t page_mod() const { return page_mod_; }
+  const std::vector<float>& inv_tok() const { return inv_tok_; }
+  const std::vector<float>& inv_page() const { return inv_page_; }
 
  private:
   std::int64_t dim_;

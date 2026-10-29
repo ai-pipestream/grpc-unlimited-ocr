@@ -4,9 +4,11 @@
 #include <cmath>
 #include <format>
 #include <limits>
+#include <span>
 
 #include "backend/reference/ops.h"
 #include "backend/reference/parallel.h"
+#include "model/attention_plan.h"
 
 namespace uocr {
 namespace ref = reference;
@@ -113,38 +115,17 @@ Tensor Decoder::attention(const Layer& layer, const Tensor& x, const std::vector
   std::vector<std::int64_t> q_pos(static_cast<std::size_t>(l));
   for (std::int64_t i = 0; i < l; ++i) q_pos[static_cast<std::size_t>(i)] = first_pos + i;
   const Tensor scores = block_scores(rq, summaries, q_pos, keys, router_);
-  std::vector<std::uint8_t> cand;
-  bool any_cand = false;
-  for (const auto& c : candidates) any_cand = any_cand || !c.empty();
-  if (any_cand) {
-    cand.assign(static_cast<std::size_t>(l * nblk), 1);
-    for (std::int64_t i = 0; i < l; ++i) {
-      const auto& c = candidates[static_cast<std::size_t>(i)];
-      if (c.empty()) continue;
-      for (std::int64_t b = 0; b < nblk; ++b) {
-        cand[static_cast<std::size_t>(i * nblk + b)] = b < static_cast<std::int64_t>(c.size()) ? c[static_cast<std::size_t>(b)] : 0;
-      }
-    }
-  }
+  const std::vector<std::uint8_t> cand = flatten_candidates(candidates, nblk);
   const BlockSelection sel = select_blocks(scores, cand, router_);
 
   // Keys attended by query i: its local window without bias, plus its
   // selected blocks with their bias; everything else masked.
   const float scale = 1.0f / std::sqrt(static_cast<float>(hd));
-  const std::int64_t window = router_.local_window();
   Tensor out({l, width});
+  const std::vector<float> key_masks = key_mask(sel, l, first_pos, keys, router_);
   ref::parallel_for(l, [&](std::int64_t i) {
     const std::int64_t pos = first_pos + i;
-    std::vector<float> block_bias(static_cast<std::size_t>(nblk), -std::numeric_limits<float>::infinity());
-    for (std::int64_t j = 0; j < sel.width; ++j) {
-      const std::size_t slot = static_cast<std::size_t>(i * sel.width + j);
-      if (sel.valid[slot] != 0) block_bias[static_cast<std::size_t>(sel.block[slot])] = sel.bias[slot];
-    }
-    std::vector<float> mask(static_cast<std::size_t>(pos + 1));
-    for (std::int64_t j = 0; j <= pos; ++j) {
-      mask[static_cast<std::size_t>(j)] =
-          j > pos - window ? 0.0f : block_bias[static_cast<std::size_t>(j / router_.block_size)];
-    }
+    const std::span<const float> mask(key_masks.data() + i * keys, static_cast<std::size_t>(pos + 1));
     std::vector<float> s(static_cast<std::size_t>(pos + 1));
     for (std::int64_t h = 0; h < dims_.heads; ++h) {
       const float* qh = q.row(i) + h * hd;

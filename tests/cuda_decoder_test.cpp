@@ -1,0 +1,101 @@
+// The CUDA decoder against the reference decoder on a tiny random model:
+// logits after the prompt and after three decode steps. Parameters are on
+// the bf16 grid; the remaining gap is bf16 rounding of GEMM inputs, so the
+// bound is bf16-sized. Skips (77) without a CUDA device.
+
+#include <cmath>
+#include <random>
+
+#include "backend/cuda/context.h"
+#include "check.h"
+#include "model/cuda/cuda_decoder.h"
+#include "model/decoder.h"
+#include "runtime/prompt_builder.h"
+#include "tensor/dtype.h"
+#include "weights/architecture.h"
+
+using namespace uocr;
+
+namespace {
+
+DecoderDims tiny() {
+  DecoderDims d;
+  d.vocab = 128830;
+  d.hidden = 32;
+  d.layers = 2;
+  d.heads = 2;
+  d.head_dim = 16;
+  d.dense_ffn = 48;
+  d.routed_experts = 8;
+  d.experts_per_token = 3;
+  d.shared_experts = 1;
+  d.expert_ffn = 24;
+  d.index_dim = 16;
+  return d;
+}
+
+TableWeights weights_for(const DecoderDims& d) {
+  ModelDims md;
+  md.decoder = d;
+  std::mt19937 rng(3);
+  std::normal_distribution<float> normal(0.0f, 0.2f);
+  TableWeights table;
+  for (const auto& spec : unlimited_ocr2_tensors(md)) {
+    if (!spec.name.starts_with("model.layers") && !spec.name.starts_with("model.embed") &&
+        spec.name != "model.norm.weight" && spec.name != "lm_head.weight") {
+      continue;
+    }
+    Tensor t(spec.shape);
+    const bool norm = spec.name.ends_with("norm.weight") && spec.name.find("router") == std::string::npos;
+    for (float& v : t.span()) v = bf16_to_f32(f32_to_bf16(norm ? 1.0f : normal(rng)));
+    table.put(spec.name, std::move(t));
+  }
+  return table;
+}
+
+double rel(const std::vector<float>& a, const std::vector<float>& b) {
+  double worst = 0.0, scale = 1e-12;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    worst = std::max(worst, std::fabs(static_cast<double>(a[i]) - b[i]));
+    scale = std::max(scale, std::fabs(static_cast<double>(b[i])));
+  }
+  return worst / scale;
+}
+
+}  // namespace
+
+int main() {
+  if (cuda::device_count() == 0) return skip("no CUDA device");
+  return run_tests([] {
+    const DecoderDims d = tiny();
+    const auto w = weights_for(d);
+    RouterParams rp = Decoder::default_router();
+    rp.block_size = 4;
+    rp.local_blocks = 1;
+    rp.idx_scale = 4.0f;
+    const Decoder ref_model(w, d, rp);
+    ReferenceDecoder ref(ref_model);
+    const cuda::Context ctx(0);
+    cuda::CudaDecoder dev(ctx, w, d, rp);
+
+    const auto prompt = build_prompt({12, 12});
+    const Tensor embeds = ref.embed(prompt);
+    const Tensor dev_embeds = dev.embed(prompt);
+    require(rel(std::vector<float>(dev_embeds.span().begin(), dev_embeds.span().end()),
+                std::vector<float>(embeds.span().begin(), embeds.span().end())) == 0.0,
+            "embeddings are exact");
+    const PromptLayout layout = layout_prompt(prompt);
+    const double first = rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout));
+    std::println("prefill logits: relative error {:.2e}", first);
+    require(first < 2e-2, "prefill logits agree at bf16 tolerance");
+
+    DecodeState state(layout, prompt);
+    const BlockPages blocks = block_image_pages(layout, rp.block_size);
+    for (const std::int64_t t : std::vector<std::int64_t>{7, 9, PromptTokens{}.page, 11}) {
+      const RopeCoord c = state.advance(t);
+      const double e = rel(dev.step(t, c, state.query_page(), blocks), ref.step(t, c, state.query_page(), blocks));
+      std::println("step {:>6}: relative error {:.2e}", t, e);
+      require(e < 2e-2, "decode logits agree at bf16 tolerance");
+    }
+  });
+}

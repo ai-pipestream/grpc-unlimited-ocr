@@ -60,6 +60,7 @@ add_library(uocr_reference STATIC
   src/model/block_router.cpp
   src/model/feed_forward.cpp
   src/model/decoder.cpp
+  src/model/attention_plan.cpp
   src/tokenizer/tokenizer.cpp
   src/runtime/prompt_builder.cpp
   src/runtime/logit_policy.cpp
@@ -108,12 +109,13 @@ if(UOCR_WITH_CUDA)
   target_link_libraries(uocr_cuda PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt)
   # Model code on the CUDA backend: C++23 host code over the op set.
   add_library(uocr_cuda_model STATIC
-    src/model/cuda/cuda_vision.cpp)
+    src/model/cuda/cuda_vision.cpp
+    src/model/cuda/cuda_decoder.cpp)
   target_link_libraries(uocr_cuda_model PUBLIC uocr_reference uocr_cuda)
   target_link_libraries(uocr-run PRIVATE uocr_cuda_model)
   target_compile_definitions(uocr-run PRIVATE UOCR_WITH_CUDA=1)
   if(BUILD_TESTING)
-    foreach(test_name cuda_ops_test cuda_vision_test)
+    foreach(test_name cuda_ops_test cuda_vision_test cuda_decoder_test cuda_golden_test)
       add_executable(${test_name} tests/${test_name}.cpp)
       target_link_libraries(${test_name} PRIVATE uocr_cuda_model)
       target_include_directories(${test_name} PRIVATE tests)

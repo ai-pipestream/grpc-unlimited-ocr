@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <print>
 #include <string>
 #include <vector>
@@ -23,6 +24,12 @@
 #include "tokenizer/tokenizer.h"
 #include "weights/architecture.h"
 #include "weights/sharded_weights.h"
+
+#if UOCR_WITH_CUDA
+#include "backend/cuda/context.h"
+#include "model/cuda/cuda_decoder.h"
+#include "model/cuda/cuda_vision.h"
+#endif
 
 using namespace uocr;
 
@@ -64,7 +71,7 @@ void save_run(const std::filesystem::path& dir, const Tokenizer& tok, const Gene
 }
 
 int usage() {
-  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] page...");
+  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] [--backend reference|cuda] page...");
   return 64;
 }
 
@@ -74,6 +81,7 @@ int main(int argc, char** argv) {
   std::string models;
   std::vector<std::string> pages;
   std::string save_dir;
+  std::string backend = "reference";
   PreprocessOptions pre;
   GenerationConfig gen;
   for (int i = 1; i < argc; ++i) {
@@ -88,6 +96,7 @@ int main(int argc, char** argv) {
     else if (a == "--window") gen.ngram_window = std::stoll(value());
     else if (a == "--max-new") gen.max_new_tokens = std::stoll(value());
     else if (a == "--save") save_dir = value();
+    else if (a == "--backend") backend = value();
     else if (a.starts_with("--")) return usage();
     else pages.push_back(a);
   }
@@ -102,9 +111,28 @@ int main(int argc, char** argv) {
     }
     const Tokenizer tokenizer = Tokenizer::load(std::filesystem::path(models) / "tokenizer.json");
     const CheckpointWeights weights(shards);
-    const VisionEncoder vision(weights);
-    const Decoder reference_decoder(weights);
-    ReferenceDecoder decoder(reference_decoder);
+#if UOCR_WITH_CUDA
+    std::unique_ptr<cuda::Context> cuda_ctx;  // declared first: device arrays must go before it
+#endif
+    std::unique_ptr<VisionModel> vision_model;
+    std::unique_ptr<Decoder> reference_decoder;
+    std::unique_ptr<DecoderModel> decoder_model;
+    if (backend == "reference") {
+      vision_model = std::make_unique<VisionEncoder>(weights);
+      reference_decoder = std::make_unique<Decoder>(weights);
+      decoder_model = std::make_unique<ReferenceDecoder>(*reference_decoder);
+#if UOCR_WITH_CUDA
+    } else if (backend == "cuda") {
+      cuda_ctx = std::make_unique<cuda::Context>(0);
+      vision_model = std::make_unique<cuda::CudaVisionEncoder>(*cuda_ctx, weights);
+      decoder_model = std::make_unique<cuda::CudaDecoder>(*cuda_ctx, weights);
+#endif
+    } else {
+      std::println(stderr, "unknown or unbuilt backend: {}", backend);
+      return 64;
+    }
+    const VisionModel& vision = *vision_model;
+    DecoderModel& decoder = *decoder_model;
     std::vector<PageViews> views;
     for (const auto& p : pages) views.push_back(preprocess_page(decode_image(read_file(p)), pre));
     const auto t1 = std::chrono::steady_clock::now();
