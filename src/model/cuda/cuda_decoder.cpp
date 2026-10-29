@@ -5,6 +5,7 @@
 #include <format>
 #include <numeric>
 
+#include "backend/cuda/decode_ops.h"
 #include "backend/cuda/ops.h"
 #include "backend/reference/ops.h"
 #include "model/decoder.h"
@@ -110,8 +111,15 @@ void CudaDecoder::reserve(std::int64_t keys) {
     grow(c.k, width);
     grow(c.v, width);
     grow(c.router_k, dims_.index_dim);
+    const std::int64_t blocks = (capacity + router_.block_size - 1) / router_.block_size;
+    Array summaries = f32(ctx_, blocks * dims_.index_dim);
+    const std::int64_t used = (length_ + router_.block_size - 1) / router_.block_size;
+    if (c.summaries.count() > 0 && used > 0) copy(ctx_, summaries.f32(), c.summaries.f32(), used * dims_.index_dim);
+    c.summaries = std::move(summaries);
   }
   capacity_ = capacity;
+  capacity_blocks_ = (capacity + router_.block_size - 1) / router_.block_size;
+  graph_.reset();  // buffers moved: the captured step must be recorded again
 }
 
 void CudaDecoder::mlp(const Expert& e, const Array& x, std::int64_t rows, Array& out) const {
@@ -217,10 +225,10 @@ void CudaDecoder::attention(const Layer& layer, std::size_t index, const Array& 
   // the key mask, the same rule as the host plan.
   const std::int64_t keys = first_pos + rows;
   const std::int64_t nblk = (keys + router_.block_size - 1) / router_.block_size;
-  Array summaries = f32(ctx_, nblk * d), z = f32(ctx_, rows * nblk), mask = f32(ctx_, rows * keys);
-  block_summaries(ctx_, cache.router_k.f32(), keys, d, layer.head_cls.f32(), router_.block_size, summaries.f32());
-  gemm_nt(ctx_, rows, nblk, d, 1.0f / std::sqrt(static_cast<float>(d)), rq.f32(), d, 0, summaries.f32(), d, 0, z.f32(),
-          nblk, 0, 1);
+  Array z = f32(ctx_, rows * nblk), mask = f32(ctx_, rows * keys);
+  block_summaries(ctx_, cache.router_k.f32(), keys, d, layer.head_cls.f32(), router_.block_size, cache.summaries.f32());
+  gemm_nt(ctx_, rows, nblk, d, 1.0f / std::sqrt(static_cast<float>(d)), rq.f32(), d, 0, cache.summaries.f32(), d, 0,
+          z.f32(), nblk, 0, 1);
   route_blocks(ctx_, z.f32(), rows, nblk, first_pos, keys, block_min_.i64(), block_max_.i64(), prompt_blocks_, pages.rows,
                pages.one,
                {router_.block_size, router_.local_blocks, router_.top_m, router_.top_k, router_.idx_scale, router_.floor,
@@ -295,9 +303,31 @@ std::vector<float> CudaDecoder::step(std::int64_t token, RopeCoord coord, std::i
                                      const BlockPages& prompt_blocks) {
   (void)prompt_blocks;  // the prompt's block pages are on the device since prefill
   const std::int64_t pos = length_;
-  Array x = f32(ctx_, dims_.hidden);
-  gather_row_bf16(ctx_, embed_.bf16(), token, dims_.hidden, x.f32());
-  return run(x, 1, pos, {coord}, QueryPages{nullptr, query_page});
+  reserve(pos + 1);
+  if (!state_host_) {
+    state_host_ = std::make_unique<PinnedBuffer>(sizeof(StepState));
+    logits_host_ = std::make_unique<PinnedBuffer>(static_cast<std::size_t>(lm_head_.rows) * 4);
+  }
+  if (!graph_) {
+    const std::int64_t width = dims_.heads * dims_.head_dim, hidden = dims_.hidden, d = dims_.index_dim;
+    step_ = StepBuffers{Array(ctx_, DType::kI64, 5), f32(ctx_, hidden), f32(ctx_, hidden), f32(ctx_, hidden),
+                        f32(ctx_, width), f32(ctx_, width), f32(ctx_, width), f32(ctx_, d), f32(ctx_, d),
+                        f32(ctx_, capacity_blocks_), f32(ctx_, capacity_), f32(ctx_, width),
+                        f32(ctx_, attend_scratch_floats(dims_.heads, dims_.head_dim, capacity_)),
+                        f32(ctx_, lm_head_.rows)};
+    ctx_.synchronize();
+    ctx_.begin_capture();
+    decode_body();
+    graph_ = ctx_.end_capture();
+  }
+  *static_cast<StepState*>(state_host_->data()) = StepState{token, pos, coord.tok, coord.page, query_page};
+  copy_to_device(ctx_, step_.state.data(), *state_host_, sizeof(StepState));
+  graph_->launch();
+  copy_to_host(ctx_, *logits_host_, step_.logits.data(), logits_host_->bytes());
+  ctx_.synchronize();
+  length_ = pos + 1;
+  const auto* l = static_cast<const float*>(logits_host_->data());
+  return {l, l + lm_head_.rows};
 }
 
 }  // namespace uocr::cuda

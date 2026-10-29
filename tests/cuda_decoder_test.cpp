@@ -91,10 +91,14 @@ int main() {
 
     DecodeState state(layout, prompt);
     const BlockPages blocks = block_image_pages(layout, rp.block_size);
-    for (const std::int64_t t : std::vector<std::int64_t>{7, 9, PromptTokens{}.page, 11}) {
+    // A marker, then enough text that the decode attention reads remote
+    // blocks as well as its local window.
+    std::vector<std::int64_t> feed{7, 9, PromptTokens{}.page, 11};
+    for (int i = 0; i < 40; ++i) feed.push_back(100 + 13 * i);
+    for (const std::int64_t t : feed) {
       const RopeCoord c = state.advance(t);
       const double e = rel(dev.step(t, c, state.query_page(), blocks), ref.step(t, c, state.query_page(), blocks));
-      std::println("step {:>6}: relative error {:.2e}", t, e);
+      if (t < 128 || t == PromptTokens{}.page) std::println("step {:>6}: relative error {:.2e}", t, e);
       require(e < 2e-2, "decode logits agree at bf16 tolerance");
     }
   });

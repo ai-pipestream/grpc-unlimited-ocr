@@ -25,6 +25,8 @@ DeviceInfo device_info(int index);
 
 // One device, one stream, the cuBLAS handles and a GEMM workspace. Every
 // op runs on this stream in order; host reads synchronise explicitly.
+class Graph;
+
 class Context {
  public:
   explicit Context(int device = 0);
@@ -34,12 +36,51 @@ class Context {
 
   void synchronize() const;
 
+  // Records everything enqueued between the two calls as a graph instead
+  // of running it.
+  void begin_capture() const;
+  std::unique_ptr<Graph> end_capture() const;
+
   struct Impl;
   Impl& impl() const { return *impl_; }
 
  private:
   std::unique_ptr<Impl> impl_;
 };
+
+// A captured, instantiated sequence of device work, replayed on the
+// context's stream.
+class Graph {
+ public:
+  ~Graph();
+  void launch() const;
+
+  struct Impl;
+  explicit Graph(std::unique_ptr<Impl> impl);
+
+ private:
+  std::unique_ptr<Impl> impl_;
+};
+
+// Page-locked host memory, so copies to and from the device are enqueued
+// without blocking the host.
+class PinnedBuffer {
+ public:
+  explicit PinnedBuffer(std::size_t bytes);
+  ~PinnedBuffer();
+  PinnedBuffer(const PinnedBuffer&) = delete;
+  PinnedBuffer& operator=(const PinnedBuffer&) = delete;
+  void* data() const { return data_; }
+  std::size_t bytes() const { return bytes_; }
+
+ private:
+  void* data_ = nullptr;
+  std::size_t bytes_ = 0;
+};
+
+// Stream-ordered copies; neither waits.
+void copy_to_device(const Context& ctx, void* device_dst, const PinnedBuffer& src, std::size_t bytes);
+void copy_to_host(const Context& ctx, PinnedBuffer& dst, const void* device_src, std::size_t bytes);
 
 enum class DType : std::uint8_t { kF32, kBF16, kI64 };
 

@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "backend/cuda/context_impl.h"
+#include "backend/cuda/decode_ops.h"
 
 namespace uocr::cuda {
 namespace {
@@ -21,6 +22,36 @@ cudaStream_t stream_of(const Context& ctx) { return ctx.impl().stream; }
 __global__ void to_bf16_kernel(const float* x, __nv_bfloat16* y, std::int64_t n) {
   const std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
   if (i < n) y[i] = __float2bfloat16_rn(x[i]);
+}
+
+// y[r] = w[r] . bf16(x) for one input row: a warp per output row, eight
+// bf16 weights per load, x staged once per block in shared memory.
+__global__ void gemv_bf16_kernel(const float* x, std::int64_t k, const __nv_bfloat16* w, std::int64_t n,
+                                 const float* bias, float* y) {
+  extern __shared__ float xs[];
+  for (std::int64_t i = threadIdx.x; i < k; i += blockDim.x) xs[i] = __bfloat162float(__float2bfloat16_rn(x[i]));
+  __syncthreads();
+  const int lane = threadIdx.x % 32, warps = blockDim.x / 32;
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * warps + threadIdx.x / 32;
+  if (row >= n) return;
+  const __nv_bfloat16* wr = w + row * k;
+  float acc = 0.0f;
+  if (k % 8 == 0) {
+    const uint4* w8 = reinterpret_cast<const uint4*>(wr);
+    for (std::int64_t c = lane; c < k / 8; c += 32) {
+      const uint4 packed = w8[c];
+      const __nv_bfloat162* pair = reinterpret_cast<const __nv_bfloat162*>(&packed);
+      const float* xv = xs + c * 8;
+      for (int q = 0; q < 4; ++q) {
+        const float2 f = __bfloat1622float2(pair[q]);
+        acc += f.x * xv[2 * q] + f.y * xv[2 * q + 1];
+      }
+    }
+  } else {
+    for (std::int64_t i = lane; i < k; i += 32) acc += __bfloat162float(wr[i]) * xs[i];
+  }
+  for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffffU, acc, off);
+  if (lane == 0) y[row] = acc + (bias != nullptr ? bias[row] : 0.0f);
 }
 
 __global__ void add_bias_kernel(float* y, const float* bias, std::int64_t rows, std::int64_t cols) {
@@ -266,6 +297,12 @@ void copy(const Context& ctx, float* dst, const float* src, std::int64_t n) {
 void linear(const Context& ctx, const float* x, std::int64_t m, std::int64_t k, const std::uint16_t* w_bf16,
             std::int64_t n, const float* bias, float* y) {
   auto stream = stream_of(ctx);
+  if (m == 1 && k <= 12288) {
+    constexpr int kBlock = 256, kWarps = kBlock / 32;
+    gemv_bf16_kernel<<<static_cast<unsigned>((n + kWarps - 1) / kWarps), kBlock, static_cast<std::size_t>(k) * 4,
+                       stream>>>(x, k, reinterpret_cast<const __nv_bfloat16*>(w_bf16), n, bias, y);
+    return;
+  }
   __nv_bfloat16* xb = nullptr;
   check(cudaMallocAsync(&xb, static_cast<std::size_t>(m * k) * 2, stream), "linear scratch");
   to_bf16_kernel<<<blocks_for(m * k), kThreads, 0, stream>>>(x, xb, m * k);
@@ -438,10 +475,17 @@ __device__ void entmax15_sorted(float* x, int n) {
 
 __global__ void route_kernel(const float* z, std::int64_t nblk, std::int64_t first_pos, std::int64_t keys,
                              const std::int64_t* block_min, const std::int64_t* block_max, std::int64_t prompt_blocks,
-                             const std::int64_t* query_page, std::int64_t one_page, RouteParams p, float* mask) {
+                             const std::int64_t* query_page, std::int64_t one_page, RouteParams p, float* mask,
+                             const StepState* state, std::int64_t cap_blocks) {
+  if (state != nullptr) {  // a decode step: the lengths come from the device
+    first_pos = state->pos;
+    keys = state->pos + 1;
+    nblk = (keys + p.block_size - 1) / p.block_size;
+    one_page = state->query_page;
+  }
   extern __shared__ float shared[];
-  float* x = shared;                                                // nblk
-  unsigned char* cand = reinterpret_cast<unsigned char*>(x + nblk);  // nblk
+  float* x = shared;                                                                // nblk
+  unsigned char* cand = reinterpret_cast<unsigned char*>(shared + cap_blocks);
   __shared__ float top_val[kMaxTop];
   __shared__ int top_idx[kMaxTop];
   __shared__ float sel_bias[kMaxTop];
@@ -556,7 +600,16 @@ void route_blocks(const Context& ctx, const float* z, std::int64_t rows, std::in
   if (params.top_m > kMaxTop) throw std::invalid_argument("route_blocks: top_m above 32");
   const std::size_t shared = static_cast<std::size_t>(nblk) * 5;
   route_kernel<<<static_cast<unsigned>(rows), kRouteThreads, shared, stream_of(ctx)>>>(
-      z, nblk, first_pos, keys, block_min, block_max, prompt_blocks, query_page, one_page, params, mask);
+      z, nblk, first_pos, keys, block_min, block_max, prompt_blocks, query_page, one_page, params, mask, nullptr, nblk);
+}
+
+void route_blocks_state(const Context& ctx, const float* z, std::int64_t max_blocks, const std::int64_t* block_min,
+                        const std::int64_t* block_max, std::int64_t prompt_blocks, const StepState* state,
+                        const RouteParams& params, float* mask) {
+  if (params.top_m > kMaxTop) throw std::invalid_argument("route_blocks: top_m above 32");
+  const std::size_t shared = static_cast<std::size_t>(max_blocks) * 5;
+  route_kernel<<<1, kRouteThreads, shared, stream_of(ctx)>>>(z, 0, 0, 0, block_min, block_max, prompt_blocks, nullptr,
+                                                             -1, params, mask, state, max_blocks);
 }
 
 }  // namespace uocr::cuda
@@ -569,33 +622,54 @@ __global__ void gather_one_bf16_kernel(const __nv_bfloat16* table, std::int64_t 
   if (i < cols) dst[i] = __bfloat162float(table[index * cols + i]);
 }
 
-// One thread per row: softmax then top k by repeated argmax. Rows are few
-// (decode) or the experts are few (64), so a serial row is cheap.
+// One warp per row: softmax, then top k by k warp-wide argmax rounds (lower
+// index on a tie). Each lane holds experts lane, lane + 32, ...
+constexpr int kTopkPerLane = 4;  // up to 128 experts
+
 __global__ void expert_topk_kernel(const float* logits, std::int64_t rows, std::int64_t experts, std::int64_t k,
                                    std::int64_t* ids, float* weights) {
-  const std::int64_t r = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
+  const std::int64_t r = blockIdx.x * static_cast<std::int64_t>(blockDim.x / 32) + threadIdx.x / 32;
+  const int lane = threadIdx.x % 32;
   if (r >= rows) return;
   const float* row = logits + r * experts;
+  float v[kTopkPerLane];
   float peak = -INFINITY;
-  for (std::int64_t e = 0; e < experts; ++e) peak = fmaxf(peak, row[e]);
+  for (int i = 0; i < kTopkPerLane; ++i) {
+    const std::int64_t e = lane + 32 * i;
+    v[i] = e < experts ? row[e] : -INFINITY;
+    peak = fmaxf(peak, v[i]);
+  }
+  for (int off = 16; off > 0; off >>= 1) peak = fmaxf(peak, __shfl_xor_sync(0xffffffffU, peak, off));
   double total = 0.0;
-  for (std::int64_t e = 0; e < experts; ++e) total += expf(row[e] - peak);
+  for (int i = 0; i < kTopkPerLane; ++i) {
+    if (lane + 32 * i < experts) total += expf(v[i] - peak);
+  }
+  for (int off = 16; off > 0; off >>= 1) total += __shfl_xor_sync(0xffffffffU, total, off);
   const float inv = static_cast<float>(1.0 / total);
-  unsigned long long taken[2] = {0, 0};  // up to 128 experts
+  for (int i = 0; i < kTopkPerLane; ++i) v[i] = lane + 32 * i < experts ? expf(v[i] - peak) * inv : -INFINITY;
   for (std::int64_t j = 0; j < k; ++j) {
     float best = -INFINITY;
-    std::int64_t best_e = 0;
-    for (std::int64_t e = 0; e < experts; ++e) {
-      if (taken[e / 64] & (1ULL << (e % 64))) continue;
-      const float s = expf(row[e] - peak) * inv;
-      if (s > best) {
-        best = s;
+    int best_e = INT_MAX;
+    for (int i = 0; i < kTopkPerLane; ++i) {
+      const int e = lane + 32 * i;
+      if (v[i] > best || (v[i] == best && e < best_e)) {
+        best = v[i];
         best_e = e;
       }
     }
-    taken[best_e / 64] |= 1ULL << (best_e % 64);
-    ids[r * k + j] = best_e;
-    weights[r * k + j] = best;
+    for (int off = 16; off > 0; off >>= 1) {
+      const float ob = __shfl_xor_sync(0xffffffffU, best, off);
+      const int oe = __shfl_xor_sync(0xffffffffU, best_e, off);
+      if (ob > best || (ob == best && oe < best_e)) {
+        best = ob;
+        best_e = oe;
+      }
+    }
+    if (lane == 0) {
+      ids[r * k + j] = best_e;
+      weights[r * k + j] = best;
+    }
+    if (best_e % 32 == lane) v[best_e / 32] = -INFINITY;
   }
 }
 
@@ -662,7 +736,9 @@ void gather_row_bf16(const Context& ctx, const std::uint16_t* table, std::int64_
 void expert_topk(const Context& ctx, const float* logits, std::int64_t rows, std::int64_t experts, std::int64_t k,
                  std::int64_t* ids, float* weights) {
   if (experts > 128) throw std::invalid_argument("expert_topk: more than 128 experts");
-  expert_topk_kernel<<<blocks_for(rows), kThreads, 0, stream_of(ctx)>>>(logits, rows, experts, k, ids, weights);
+  constexpr int kWarpsPerBlock = 8;
+  expert_topk_kernel<<<static_cast<unsigned>((rows + kWarpsPerBlock - 1) / kWarpsPerBlock), kWarpsPerBlock * 32, 0,
+                       stream_of(ctx)>>>(logits, rows, experts, k, ids, weights);
 }
 
 void expert_ffn_one(const Context& ctx, const float* x, std::int64_t hidden, std::int64_t ffn,

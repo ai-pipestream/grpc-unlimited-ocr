@@ -1,10 +1,13 @@
 #pragma once
 
-// The decoder on the CUDA backend. Tensor math runs on the device; the
-// sparse-attention plan (block selection, key masks) and the expert
-// routing are decided on the host with the same code the reference
-// backend uses, from small score tensors copied back each layer.
+// The decoder on the CUDA backend. Prefill runs op by op; expert routing
+// for a prompt is decided on the host from the gate scores, with the same
+// rule as the reference backend. A decode step runs entirely on the device
+// (block routing, expert routing, attention) and is captured once as a
+// CUDA graph, then replayed per token with only a small step state
+// rewritten.
 
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -55,6 +58,11 @@ class CudaDecoder final : public DecoderModel {
   };
   struct Cache {
     Array k, v, router_k;  // [capacity, width] each
+    Array summaries;       // router block summaries [capacity blocks, index dim]
+  };
+  // Fixed buffers of a decode step, so a captured graph can replay it.
+  struct StepBuffers {
+    Array state, x, h, delta, q, k, v, rq, rk, z, mask, merged, scores, logits;
   };
 
   // Runs every layer over x [rows, hidden] for queries at positions
@@ -73,6 +81,9 @@ class CudaDecoder final : public DecoderModel {
   void mlp(MlpView e, const Array& x, std::int64_t rows, Array& out) const;
   void moe(const Layer& layer, const Array& h, std::int64_t rows, Array& out) const;
   void reserve(std::int64_t keys);
+  // One decode step from the device step state to the logits buffer.
+  void decode_body();
+  void decode_attention(const Layer& layer, Cache& cache);
   static ExpertStack stack_experts(const Context& ctx, const WeightSource& w, const std::string& prefix,
                                    const DecoderDims& dims);
 
@@ -87,6 +98,10 @@ class CudaDecoder final : public DecoderModel {
   Array block_min_, block_max_;  // image-page range per prompt block
   std::int64_t prompt_blocks_ = 0;
   std::int64_t capacity_ = 0;
+  std::int64_t capacity_blocks_ = 0;
+  StepBuffers step_;
+  std::unique_ptr<PinnedBuffer> state_host_, logits_host_;
+  std::unique_ptr<Graph> graph_;
   std::int64_t length_ = 0;
   RopeCoord one_coord_;  // the coordinate of a single-row call
 };

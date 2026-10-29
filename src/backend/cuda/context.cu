@@ -49,18 +49,65 @@ Context::Context(int device) : impl_(std::make_unique<Impl>()) {
   check(cublasSetMathMode(impl_->blas, CUBLAS_DEFAULT_MATH), "cublasSetMathMode");
   check(cublasLtCreate(&impl_->lt), "cublasLtCreate");
   check(cudaMalloc(&impl_->workspace, impl_->workspace_bytes), "cudaMalloc workspace");
+  // cuBLAS gets a fixed workspace so its calls can be captured in a graph.
+  check(cudaMalloc(&impl_->blas_workspace, impl_->workspace_bytes), "cudaMalloc cuBLAS workspace");
+  check(cublasSetWorkspace(impl_->blas, impl_->blas_workspace, impl_->workspace_bytes), "cublasSetWorkspace");
 }
 
 Context::~Context() {
   if (!impl_) return;
   cudaStreamSynchronize(impl_->stream);
   cudaFree(impl_->workspace);
+  cudaFree(impl_->blas_workspace);
   cublasLtDestroy(impl_->lt);
   cublasDestroy(impl_->blas);
   cudaStreamDestroy(impl_->stream);
 }
 
 void Context::synchronize() const { check(cudaStreamSynchronize(impl_->stream), "cudaStreamSynchronize"); }
+
+struct Graph::Impl {
+  cudaGraph_t graph = nullptr;
+  cudaGraphExec_t exec = nullptr;
+  cudaStream_t stream = nullptr;
+};
+
+Graph::Graph(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+
+Graph::~Graph() {
+  if (impl_->exec != nullptr) cudaGraphExecDestroy(impl_->exec);
+  if (impl_->graph != nullptr) cudaGraphDestroy(impl_->graph);
+}
+
+void Graph::launch() const { check(cudaGraphLaunch(impl_->exec, impl_->stream), "cudaGraphLaunch"); }
+
+void Context::begin_capture() const {
+  check(cudaStreamBeginCapture(impl_->stream, cudaStreamCaptureModeThreadLocal), "cudaStreamBeginCapture");
+}
+
+std::unique_ptr<Graph> Context::end_capture() const {
+  auto g = std::make_unique<Graph::Impl>();
+  g->stream = impl_->stream;
+  check(cudaStreamEndCapture(impl_->stream, &g->graph), "cudaStreamEndCapture");
+  check(cudaGraphInstantiate(&g->exec, g->graph, 0), "cudaGraphInstantiate");
+  return std::make_unique<Graph>(std::move(g));
+}
+
+PinnedBuffer::PinnedBuffer(std::size_t bytes) : bytes_(bytes) {
+  check(cudaHostAlloc(&data_, bytes, cudaHostAllocDefault), "cudaHostAlloc");
+}
+
+PinnedBuffer::~PinnedBuffer() {
+  if (data_ != nullptr) cudaFreeHost(data_);
+}
+
+void copy_to_device(const Context& ctx, void* device_dst, const PinnedBuffer& src, std::size_t bytes) {
+  check(cudaMemcpyAsync(device_dst, src.data(), bytes, cudaMemcpyHostToDevice, ctx.impl().stream), "copy_to_device");
+}
+
+void copy_to_host(const Context& ctx, PinnedBuffer& dst, const void* device_src, std::size_t bytes) {
+  check(cudaMemcpyAsync(dst.data(), device_src, bytes, cudaMemcpyDeviceToHost, ctx.impl().stream), "copy_to_host");
+}
 
 Array::Array(const Context& ctx, DType type, std::int64_t count) : ctx_(&ctx), count_(count), type_(type) {
   const std::size_t bytes = static_cast<std::size_t>(count) * element_bytes(type);

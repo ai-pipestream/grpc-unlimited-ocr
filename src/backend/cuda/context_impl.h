@@ -18,6 +18,7 @@ struct Context::Impl {
   cublasHandle_t blas = nullptr;
   cublasLtHandle_t lt = nullptr;
   void* workspace = nullptr;
+  void* blas_workspace = nullptr;
   std::size_t workspace_bytes = 32u << 20;
 };
 
