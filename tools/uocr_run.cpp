@@ -139,16 +139,15 @@ int main(int argc, char** argv) {
     std::println(stderr, "loaded in {:.1f} s", std::chrono::duration<double>(t1 - t0).count());
 
     std::vector<std::int64_t> so_far;
-    std::size_t printed = 0;
     auto first = std::chrono::steady_clock::time_point{};
     const auto result = generate(vision, decoder, views, gen, [&](const GeneratedToken& step) {
       if (first == std::chrono::steady_clock::time_point{}) first = std::chrono::steady_clock::now();
       if (step.token == 1) return true;  // EOS: kept in the trace, not printed
+      // Bytes go out as they come; a character split across tokens is
+      // completed by the next write.
       so_far.push_back(step.token);
-      const std::string text = tokenizer.decode(so_far);
-      std::print("{}", text.substr(printed));
+      std::fputs(tokenizer.decode({step.token}).c_str(), stdout);
       std::fflush(stdout);
-      printed = text.size();
       return true;
     });
     if (!save_dir.empty()) save_run(save_dir, tokenizer, result, pages);

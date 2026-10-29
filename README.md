@@ -9,7 +9,10 @@ target's lowest level (CUDA, Intel SYCL/oneDNN, Apple Metal, and a Hailo
 offload for the vision encoder). There is no inference runtime and no
 Python at build or run time.
 
-**Status:** phase 0, the reference engine. Nothing serves requests yet.
+**Status:** the reference engine matches the upstream implementation token
+for token, and the CUDA backend runs a page end to end (on an RTX 4080
+SUPER: 0.3 s of prefill per page, about 285 tokens per second end to end).
+The gRPC server is not written yet.
 The plan, wire contract and phases are in [`docs/design.md`](docs/design.md).
 
 ## Build and test
@@ -31,6 +34,15 @@ UOCR_MODELS_DIR=/path/to/unlimited-ocr-2 ctest --test-dir build --output-on-fail
 ```
 
 A green run proves nothing about a test that skipped; read the skip count.
+
+With the CUDA backend (`-DUOCR_WITH_CUDA=ON`; with a CUDA 12 toolkit add
+`-DCMAKE_CUDA_HOST_COMPILER=g++-13`), or in the image:
+
+```sh
+docker build -t grpc-unlimited-ocr:local .
+docker run --rm --gpus all -v /path/to/unlimited-ocr-2:/models:ro -v "$PWD/pages:/pages:ro" \
+  grpc-unlimited-ocr:local /pages/page1.png
+```
 
 ## Licence
 

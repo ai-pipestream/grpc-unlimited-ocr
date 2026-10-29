@@ -29,7 +29,12 @@ to gRParse, which dials it as `GRPARSE_UNLIMITED_OCR_TARGET`.
 - **C++23, no god classes:** files under about 800 lines, functions under
   about 60 unless they are a flat table.
 - **Tests:** plain-main executables under `tests/`, registered with CTest;
-  a test that needs weights or a device exits 77 when it is absent.
+  a test that needs weights or a device exits 77 when it is absent. CUDA
+  tests judge at bf16 tolerance against the reference backend; the golden
+  page is token-exact on the reference backend and text-exact on CUDA.
+- **CUDA build with a CUDA 12 toolkit:** `cmake -B build-cuda -DUOCR_WITH_CUDA=ON
+  -DCMAKE_CUDA_HOST_COMPILER=g++-13` (nvcc 12 cannot use GCC 15 as its
+  host compiler; the CUDA 13 image can).
 - **Git:** `origin` = Forgejo (`git.rokkon.com/ai-pipestream`), `github` =
   GitHub. Push `origin` first, then `github`. No em dashes and no tool or
   model attribution in commit messages; docs-only commits carry
@@ -46,6 +51,8 @@ to gRParse, which dials it as `GRPARSE_UNLIMITED_OCR_TARGET`.
 | `src/runtime/` | prompt, logit policy (n-gram ban, page guard), generation loop |
 | `src/image/` | PNG/JPEG decode, Pillow-exact bicubic, letterbox and tiles |
 | `src/tokenizer/` | byte-level BPE decoding and special ids |
+| `src/backend/cuda/` | CUDA backend: context, device arrays, graphs, the op set (`ops.cu`) and the length-independent decode-step kernels (`decode_ops.cu`) |
+| `src/model/cuda/` | the vision encoder and decoder on the CUDA backend; the decode step is captured as one CUDA graph |
 | `tools/uocr_run.cpp` | developer runner: page files in, raw model output out |
 | `models/MANIFEST` | the pinned upstream files |
 | `docs/design.md` | the design; keep it in step with the code |

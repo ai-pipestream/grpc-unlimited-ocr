@@ -7,11 +7,13 @@
 namespace uocr {
 namespace {
 
-float log_softmax_at(const std::vector<float>& logits, std::int64_t index) {
+// log(sum(exp(logits))): the normaliser of a log-softmax, computed once
+// per step for every log-probability the step records.
+double log_normaliser(const std::vector<float>& logits) {
   const float peak = *std::ranges::max_element(logits);
   double total = 0.0;
   for (const float v : logits) total += std::exp(static_cast<double>(v - peak));
-  return static_cast<float>(logits[static_cast<std::size_t>(index)] - peak - std::log(total));
+  return peak + std::log(total);
 }
 
 }  // namespace
@@ -55,8 +57,10 @@ GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std
     const std::vector<float> raw = logits;
     const Choice choice = policy.choose(logits, result.tokens);
     const std::int64_t next = choice.token;
-    const GeneratedToken record{next, log_softmax_at(raw, next), choice.model_token,
-                                log_softmax_at(raw, choice.model_token), choice.intervention};
+    const double norm = log_normaliser(raw);
+    auto logprob = [&](std::int64_t t) { return static_cast<float>(raw[static_cast<std::size_t>(t)] - norm); };
+    const GeneratedToken record{next, logprob(next), choice.model_token, logprob(choice.model_token),
+                                choice.intervention};
     result.trace.push_back(record);
     const bool keep_going = !sink || sink(record);
     if (next == 1) {
