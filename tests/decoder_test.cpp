@@ -98,6 +98,13 @@ int main() {
     const auto a = generate_from_embeddings(decoder, prompt, embeds, gc);
     const auto b = generate_from_embeddings(decoder, prompt, embeds, gc);
     require(a.tokens == b.tokens, "greedy generation is deterministic");
+    const std::size_t eos = a.finish == FinishReason::kEndOfSequence ? 1 : 0;
+    require(a.trace.size() == a.tokens.size() + eos, "one trace row per step, EOS step included");
+    for (std::size_t i = 0; i < a.tokens.size(); ++i) {
+      const auto& s = a.trace[i];
+      require(s.token == a.tokens[i] && s.logprob <= 0.0f && s.model_logprob >= s.logprob, "trace rows are consistent");
+      require((s.intervention == Intervention::kNone) == (s.token == s.model_token), "an override is recorded when it happens");
+    }
     require(std::ranges::count(a.tokens, PromptTokens{}.page) <= 2, "never more pages than the prompt has");
   });
 }

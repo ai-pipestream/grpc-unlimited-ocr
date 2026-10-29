@@ -1,9 +1,20 @@
 #include "runtime/generator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace uocr {
+namespace {
+
+float log_softmax_at(const std::vector<float>& logits, std::int64_t index) {
+  const float peak = *std::ranges::max_element(logits);
+  double total = 0.0;
+  for (const float v : logits) total += std::exp(static_cast<double>(v - peak));
+  return static_cast<float>(logits[static_cast<std::size_t>(index)] - peak - std::log(total));
+}
+
+}  // namespace
 
 GenerationResult generate(const VisionEncoder& vision, const Decoder& decoder, const std::vector<PageViews>& pages,
                           const GenerationConfig& config, const TokenSink& sink) {
@@ -42,13 +53,19 @@ GenerationResult generate_from_embeddings(const Decoder& decoder, std::vector<st
   std::vector<float> logits = decoder.prefill(embeds, layout, cache);
   const auto prompt_len = static_cast<std::int64_t>(result.prompt.size());
   for (std::int64_t step = 0; step < config.max_new_tokens; ++step) {
-    const std::int64_t next = policy.choose(logits, result.tokens);
+    const std::vector<float> raw = logits;
+    const Choice choice = policy.choose(logits, result.tokens);
+    const std::int64_t next = choice.token;
+    const GeneratedToken record{next, log_softmax_at(raw, next), choice.model_token,
+                                log_softmax_at(raw, choice.model_token), choice.intervention};
+    result.trace.push_back(record);
+    const bool keep_going = !sink || sink(record);
     if (next == 1) {
       result.finish = FinishReason::kEndOfSequence;
       return result;
     }
     result.tokens.push_back(next);
-    if (sink && !sink(next)) {
+    if (!keep_going) {
       return result;
     }
     if (prompt_len + static_cast<std::int64_t>(result.tokens.size()) >= config.max_length) {

@@ -26,15 +26,27 @@ struct GenerationConfig {
   std::int64_t max_page_tokens = 20000;
 };
 
+// Everything one decode step produced, so nothing the model returns is lost:
+// the chosen token, the model's own top token and both their
+// log-probabilities under the raw logits, and what overrode the model.
+struct GeneratedToken {
+  std::int64_t token = 0;
+  float logprob = 0.0f;
+  std::int64_t model_token = 0;
+  float model_logprob = 0.0f;
+  Intervention intervention = Intervention::kNone;
+};
+
 struct GenerationResult {
   std::vector<std::int64_t> prompt;
-  std::vector<std::int64_t> tokens;  // generated, EOS excluded
+  std::vector<std::int64_t> tokens;   // generated, EOS excluded
+  std::vector<GeneratedToken> trace;  // every step, the closing EOS step included
   FinishReason finish = FinishReason::kTokenBudget;
 };
 
-// Called with each generated token as soon as it is chosen; return false to
-// stop early.
-using TokenSink = std::function<bool(std::int64_t token)>;
+// Called with each step as soon as its token is chosen (the closing EOS step
+// included); return false to stop early.
+using TokenSink = std::function<bool(const GeneratedToken& step)>;
 
 GenerationResult generate(const VisionEncoder& vision, const Decoder& decoder, const std::vector<PageViews>& pages,
                           const GenerationConfig& config, const TokenSink& sink = {});

@@ -2,7 +2,11 @@
 // streams the model's raw output to stdout. Not the service (that one is
 // diskless and speaks gRPC); this reads its pages from files.
 //
-//   uocr-run --models DIR [--tiled] [--ngram N --window N] [--max-new N] page1.png [page2.png ...]
+//   uocr-run --models DIR [--tiled] [--ngram N --window N] [--max-new N] [--save DIR] page1.png ...
+//
+// --save DIR keeps everything the run produced: the prompt ids, the raw
+// output with every special token, and one row per decode step (token,
+// piece, log-probability, the model's own top token, any override).
 
 #include <chrono>
 #include <cstdlib>
@@ -30,8 +34,37 @@ std::vector<std::uint8_t> read_file(const std::string& path) {
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
+const char* intervention_name(Intervention i) {
+  switch (i) {
+    case Intervention::kNone: return "none";
+    case Intervention::kRepeatBan: return "repeat_ban";
+    case Intervention::kPageGuard: return "page_guard";
+  }
+  return "unknown";
+}
+
+void save_run(const std::filesystem::path& dir, const Tokenizer& tok, const GenerationResult& r,
+              const std::vector<std::string>& pages) {
+  std::filesystem::create_directories(dir);
+  std::ofstream prompt(dir / "prompt_ids.txt");
+  for (const auto id : r.prompt) prompt << id << '\n';
+  std::ofstream raw(dir / "output_raw.txt", std::ios::binary);
+  raw << tok.decode(r.tokens);
+  std::ofstream trace(dir / "trace.tsv");
+  trace << "step\ttoken\tpiece\tlogprob\tmodel_token\tmodel_logprob\tintervention\n";
+  for (std::size_t i = 0; i < r.trace.size(); ++i) {
+    const auto& s = r.trace[i];
+    trace << i << '\t' << s.token << '\t' << tok.piece(s.token) << '\t' << s.logprob << '\t' << s.model_token
+          << '\t' << s.model_logprob << '\t' << intervention_name(s.intervention) << '\n';
+  }
+  std::ofstream meta(dir / "run.txt");
+  meta << "finish\t" << static_cast<int>(r.finish) << "\nprompt_tokens\t" << r.prompt.size() << "\ngenerated_tokens\t"
+       << r.tokens.size() << '\n';
+  for (const auto& p : pages) meta << "page\t" << p << '\n';
+}
+
 int usage() {
-  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] page...");
+  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] page...");
   return 64;
 }
 
@@ -40,6 +73,7 @@ int usage() {
 int main(int argc, char** argv) {
   std::string models;
   std::vector<std::string> pages;
+  std::string save_dir;
   PreprocessOptions pre;
   GenerationConfig gen;
   for (int i = 1; i < argc; ++i) {
@@ -53,6 +87,7 @@ int main(int argc, char** argv) {
     else if (a == "--ngram") gen.ngram_size = std::stoll(value());
     else if (a == "--window") gen.ngram_window = std::stoll(value());
     else if (a == "--max-new") gen.max_new_tokens = std::stoll(value());
+    else if (a == "--save") save_dir = value();
     else if (a.starts_with("--")) return usage();
     else pages.push_back(a);
   }
@@ -77,15 +112,17 @@ int main(int argc, char** argv) {
     std::vector<std::int64_t> so_far;
     std::size_t printed = 0;
     auto first = std::chrono::steady_clock::time_point{};
-    const auto result = generate(vision, decoder, views, gen, [&](std::int64_t token) {
-      if (so_far.empty()) first = std::chrono::steady_clock::now();
-      so_far.push_back(token);
+    const auto result = generate(vision, decoder, views, gen, [&](const GeneratedToken& step) {
+      if (first == std::chrono::steady_clock::time_point{}) first = std::chrono::steady_clock::now();
+      if (step.token == 1) return true;  // EOS: kept in the trace, not printed
+      so_far.push_back(step.token);
       const std::string text = tokenizer.decode(so_far);
       std::print("{}", text.substr(printed));
       std::fflush(stdout);
       printed = text.size();
       return true;
     });
+    if (!save_dir.empty()) save_run(save_dir, tokenizer, result, pages);
     const auto t2 = std::chrono::steady_clock::now();
     const double decode_s = std::chrono::duration<double>(t2 - first).count();
     std::println(stderr, "\nprompt {} tokens, prefill {:.1f} s, {} tokens in {:.1f} s ({:.2f} tok/s), finish {}",

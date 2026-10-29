@@ -54,10 +54,18 @@ void LogitPolicy::guard_pages(std::vector<float>& logits, const std::vector<std:
   }
 }
 
-std::int64_t LogitPolicy::choose(std::vector<float>& logits, const std::vector<std::int64_t>& generated) {
+Choice LogitPolicy::choose(std::vector<float>& logits, const std::vector<std::int64_t>& generated) {
+  auto argmax = [&] { return std::distance(logits.begin(), std::ranges::max_element(logits)); };
+  Choice c;
+  c.model_token = argmax();
   ban_repeats(logits, generated);
+  const std::int64_t after_ban = argmax();
   guard_pages(logits, generated);
-  return std::distance(logits.begin(), std::ranges::max_element(logits));
+  c.token = argmax();
+  c.intervention = c.token != after_ban           ? Intervention::kPageGuard
+                   : after_ban != c.model_token ? Intervention::kRepeatBan
+                                                : Intervention::kNone;
+  return c;
 }
 
 }  // namespace uocr

@@ -22,13 +22,23 @@ struct LogitPolicyConfig {
   std::int64_t eos_token = 1;
 };
 
+// Why the chosen token differs from the model's own top token, if it does.
+enum class Intervention { kNone, kRepeatBan, kPageGuard };
+
+struct Choice {
+  std::int64_t token = 0;
+  std::int64_t model_token = 0;  // argmax of the logits as the model gave them
+  Intervention intervention = Intervention::kNone;
+};
+
 class LogitPolicy {
  public:
   explicit LogitPolicy(LogitPolicyConfig config) : config_(std::move(config)) {}
 
   // Applies the ban and the guard to `logits` given the tokens generated
-  // so far, then returns the greedy choice (lowest id on a tie).
-  std::int64_t choose(std::vector<float>& logits, const std::vector<std::int64_t>& generated);
+  // so far, then returns the greedy choice (lowest id on a tie) and what,
+  // if anything, overrode the model.
+  Choice choose(std::vector<float>& logits, const std::vector<std::int64_t>& generated);
 
  private:
   void ban_repeats(std::vector<float>& logits, const std::vector<std::int64_t>& generated) const;
