@@ -86,3 +86,33 @@ if(BUILD_TESTING)
       ENVIRONMENT "UOCR_TEST_TMP=${CMAKE_CURRENT_BINARY_DIR}/test-tmp")
   endforeach()
 endif()
+
+# ---------------------------------------------------------------------------
+# CUDA backend (optional). Kernels build with nvcc; nothing CUDA leaks into
+# the C++23 host headers, so nvcc's host compiler may be older than ours
+# (pass -DCMAKE_CUDA_HOST_COMPILER=g++-13 with a CUDA 12 toolkit).
+# ---------------------------------------------------------------------------
+option(UOCR_WITH_CUDA "Build the CUDA backend" OFF)
+if(UOCR_WITH_CUDA)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 87 89)  # Jetson Orin, Ada
+  endif()
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  find_package(CUDAToolkit REQUIRED)
+  add_library(uocr_cuda STATIC
+    src/backend/cuda/context.cu
+    src/backend/cuda/ops.cu)
+  target_include_directories(uocr_cuda PUBLIC src)
+  target_link_libraries(uocr_cuda PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt)
+  if(BUILD_TESTING)
+    foreach(test_name cuda_ops_test)
+      add_executable(${test_name} tests/${test_name}.cpp)
+      target_link_libraries(${test_name} PRIVATE uocr_reference uocr_cuda)
+      target_include_directories(${test_name} PRIVATE tests)
+      add_test(NAME ${test_name} COMMAND ${test_name})
+      set_tests_properties(${test_name} PROPERTIES SKIP_RETURN_CODE 77)
+    endforeach()
+  endif()
+endif()
