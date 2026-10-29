@@ -3,7 +3,8 @@ name: CI
 # Phase 0 gate: build the engine with warnings as errors and the address
 # and undefined-behaviour sanitizers, then run the CTest suite. Tests that
 # need the model weights skip (77) here; they run where the weights are.
-# The image build and boot-proof join this workflow with the server.
+# The CUDA image job compiles the CUDA backend; GPU tests skip on hosted
+# runners and run on a GPU host.
 on:
   push:
     branches: [main]
@@ -29,3 +30,21 @@ jobs:
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  cuda-image:
+    name: CUDA image (builds the CUDA backend, runs the suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: false
+          build-args: UOCR_REVISION=${{ github.sha }}
