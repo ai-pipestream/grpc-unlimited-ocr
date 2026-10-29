@@ -1,0 +1,31 @@
+name: CI
+
+# Phase 0 gate: build the engine with warnings as errors and the address
+# and undefined-behaviour sanitizers, then run the CTest suite. Tests that
+# need the model weights skip (77) here; they run where the weights are.
+# The image build and boot-proof join this workflow with the server.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test (GCC 15, sanitizers)
+    runs-on: ubuntu-latest
+    container: gcc:15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install CMake and Ninja
+        run: apt-get update && apt-get install -y --no-install-recommends cmake ninja-build
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUOCR_WERROR=ON -DUOCR_SANITIZE=address,undefined
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

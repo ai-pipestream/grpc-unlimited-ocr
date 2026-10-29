@@ -1,0 +1,18 @@
+# Model files grpc-unlimited-ocr loads from GRPC_UOCR_MODELS_DIR.
+# One entry per line, whitespace separated; # starts a comment.
+#
+#   path  sha256  size-in-bytes  group  license  url
+#
+# The files are the upstream release as published, pinned to one Hugging
+# Face revision; nothing is converted or derived. A file that hashes
+# differently is a different model and is refused.
+#
+# Upstream: baidu/Unlimited-OCR-2, revision 5632329a32e103d5f1add270681e0f5c1233c6e4
+model-00001-of-00002.safetensors     4c40b740f209fd7682040d4ebf19409208acde5c401ccd2dde426d0f41542f18  4998430312  model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/model-00001-of-00002.safetensors
+model-00002-of-00002.safetensors     9490b82fa47f89e5110eb5577f8ab1b6694c12121905dbc086ddb10207a4ba0c  1689875264  model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/model-00002-of-00002.safetensors
+model.safetensors.index.json         dc60a31ecb77eb03e166345d18cbe25bc71d2a19cc6fc089d8a9ac1c7f209671  254054      model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/model.safetensors.index.json
+tokenizer.json                       c55c165e32c5a67830362a53e1f548c8930dcc8469efa30ff3252a982799c589  9980278     model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/tokenizer.json
+tokenizer_config.json                ceba7d221f265cca4c98b5e0a1d48c10107270b7b29c12396610d6d0fd64b126  166632      model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/tokenizer_config.json
+special_tokens_map.json              9e89493d7938e7710c524dbaff613c3648f0a018262417af78505128004e5cb4  549         model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/special_tokens_map.json
+config.json                          607d130a70d5af5a35329aa237acd68651f45504c62cc7ced981066f4e781126  5525        model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/config.json
+generation_config.json               dcd0479f3a12e5e4413d956197f8a4074408e4901834b38c7e036519134e05af  111         model   MIT  https://huggingface.co/baidu/Unlimited-OCR-2/resolve/5632329a32e103d5f1add270681e0f5c1233c6e4/generation_config.json
