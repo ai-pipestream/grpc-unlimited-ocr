@@ -40,7 +40,8 @@ jobs:
           unzip -q /tmp/bun.zip -d /tmp/uocr-bun
           install /tmp/uocr-bun/${target}/bun /usr/local/bin/bun
           ln -s /usr/local/bin/bun /usr/local/bin/node
-          node --version
+          bun --version
+          node -e 'if (!process.versions.bun) process.exit(1)'
       - uses: actions/checkout@v7
       - name: Install CMake and Ninja
         run: apt-get update && apt-get install -y --no-install-recommends cmake ninja-build
