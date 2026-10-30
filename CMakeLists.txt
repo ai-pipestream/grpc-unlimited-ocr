@@ -37,7 +37,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 # stb_image (public domain or MIT): PNG and JPEG decode of page rasters.
 FetchContent_Declare(stb
   GIT_REPOSITORY https://github.com/nothings/stb.git
-  GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20)
+  GIT_TAG 003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5)
 FetchContent_MakeAvailable(stb)
 
 add_library(uocr_weights STATIC
