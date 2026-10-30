@@ -22,10 +22,25 @@ jobs:
     timeout-minutes: 30
     steps:
       # Forgejo executes JavaScript actions with the container's node binary;
-      # gcc:15 does not include it. GitHub supplies its own action runtime.
-      - name: Install Node for Forgejo actions
+      # gcc:15 does not include it. Use Bun for that compatibility entry point.
+      # GitHub supplies its own action runtime.
+      - name: Install Bun for Forgejo actions
         if: ${{ github.server_url != 'https://github.com' }}
-        run: apt-get update && apt-get install -y --no-install-recommends nodejs
+        env:
+          BUN_VERSION: 1.4.4
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip
+          case "$(uname -m)" in
+            x86_64) target=bun-linux-x64-baseline; checksum=e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76 ;;
+            aarch64) target=bun-linux-aarch64; checksum=baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e ;;
+            *) echo 'Unsupported Bun architecture' >&2; exit 1 ;;
+          esac
+          curl --fail --location --retry 3 "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${target}.zip" -o /tmp/bun.zip
+          echo "${checksum}  /tmp/bun.zip" | sha256sum --check
+          unzip -q /tmp/bun.zip -d /tmp/uocr-bun
+          install /tmp/uocr-bun/${target}/bun /usr/local/bin/bun
+          ln -s /usr/local/bin/bun /usr/local/bin/node
+          node --version
       - uses: actions/checkout@v7
       - name: Install CMake and Ninja
         run: apt-get update && apt-get install -y --no-install-recommends cmake ninja-build
