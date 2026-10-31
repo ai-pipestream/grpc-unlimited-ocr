@@ -1,7 +1,7 @@
 # Design: the grpc-unlimited-ocr collector
 
-**Status:** design, no implementation yet. The service does not exist; this
-document is the agreement to build against.
+**Status:** P0 (reference engine), P1 (CUDA backend) and the service (P2,
+P3) are built; section 5.3 lists where the service differs from this text.
 **Updated:** 2026-10-29 (revised from an ONNX Runtime engine to a native one)
 **Upstream studied:** `baidu/Unlimited-OCR` at `48ff432` (2026-10-28) and the
 Hugging Face model repos `baidu/Unlimited-OCR-2` and `baidu/Unlimited-OCR`.
@@ -709,6 +709,28 @@ Boxes convert from 0..1000 to the page's pixel size from `PageImage`.
 Every item carries `CollectorSource{collector: "unlimited-ocr", model:
 "Unlimited-OCR-2", version}` and a `GenerationSource` with token counts
 and stop reason, so the merge keeps attribution.
+
+### 5.3 As built
+
+- `PictureRegion` carries `text`: a picture block can hold text the model
+  wrote inside the region, and the lossless rule keeps it. The folded
+  `Document` hangs it on the `PictureItem` as a child `TextItem`.
+- `ContinuationLink.link_kind` says why two blocks are joined (an
+  append_/cross_ chain or a same-page `<MERGE>`).
+- Pages are split on the `<PAGE>` token the page-count guard counts, not on
+  text that spells it. Text before the first `<PAGE>` belongs to the first
+  page. Markers past a window's last page stay on that page.
+- The bare-label repair does not let a declaration's trailing junk cross a
+  newline or a `<` (upstream's `[^\]]*` can). That keeps every closed block
+  final, which is what makes the incremental parser match a whole-text
+  parse; the fuzz test checks it.
+- Each window is decoded with its own prompt; carrying the previous
+  window's KV tail into the next (upstream's server) is engine work for
+  P9. Continuation chains still link across windows.
+- Every item's `CollectorSource` carries the model's mean log-probability
+  over the steps behind it (`raw_score_kind` `mean_logprob`).
+- `GRPC_UOCR_DEVICE_MEMORY_CAP` is not read yet: no backend allocates from
+  a capped arena.
 
 ## 6. gRParse integration
 
