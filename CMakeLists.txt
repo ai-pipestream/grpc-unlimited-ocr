@@ -129,3 +129,14 @@ if(UOCR_WITH_CUDA)
     endforeach()
   endif()
 endif()
+
+# ---------------------------------------------------------------------------
+# The gRPC service: contract, block parser, Document fold and server. gRPC
+# is pinned and wired the way grpc-vlm-convert does it (fetched, static,
+# protoc and the plugin built from source, no host protoc). Off builds the
+# engine and its tests only.
+# ---------------------------------------------------------------------------
+option(UOCR_WITH_SERVER "Build the gRPC service" ON)
+if(UOCR_WITH_SERVER)
+  include(cmake/server.cmake)
+endif()

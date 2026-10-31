@@ -1,0 +1,450 @@
+// grpc-unlimited-ocr wire contract: whole-document parsing by the
+// Unlimited-OCR 2 model on this service's own native engine. The client
+// streams a document's page rasters; the service streams back every decode
+// step, the layout blocks parsed from them, per-page Document fragments,
+// continuation links, and the folded Document.
+//
+// Two rules hold for every message here. Every fact is a typed field: no
+// JSON strings, maps, Struct or opaque bytes standing in for structure.
+// Nothing the model returns is lost: every decode step is on the wire
+// (PageTokens), and the parsed views point back at the steps they came
+// from.
+syntax = "proto3";
+
+package ai.pipestream.unlimitedocr.v1;
+
+import "ai/pipestream/document/v1/document.proto";
+
+// Whole-document OCR collector.
+service UnlimitedOcrService {
+  // Parses one document.
+  //
+  // The client sends ParseOptions first, then one PageImage per page (any
+  // order, keyed by page_no), then half-closes. The server streams events
+  // as the decoder produces them: WindowStarted when a page window starts
+  // decoding, Block as each block closes, PageTokens and PageDocument as
+  // each page closes (pages close strictly in order), ContinuationLink
+  // when the second half of a cross-page or merged pair appears, the
+  // folded Document when asked for, and one ParseComplete trailer.
+  //
+  // Errors: a missing or repeated ParseOptions, a page_count of zero, a
+  // page_no outside 1..page_count or sent twice, or fewer pages than
+  // page_count at half-close is INVALID_ARGUMENT; more pages or bytes than
+  // the server's caps is RESOURCE_EXHAUSTED. A stream waits for a free
+  // document slot before its first window decodes.
+  // With abort_on_error, the first PageFailure ends the stream with
+  // ABORTED after the failure is sent.
+  rpc ParseDocument(stream ParseDocumentRequest) returns (stream ParseDocumentResponse);
+  // Build, model and capability facts for this server process.
+  rpc GetServiceInfo(GetServiceInfoRequest) returns (GetServiceInfoResponse);
+}
+
+// One client-to-server message on the ParseDocument stream.
+message ParseDocumentRequest {
+  // Exactly one payload kind per message.
+  oneof payload {
+    // Must be the first message on the stream and must not repeat.
+    ParseOptions options = 1;
+    // One page raster.
+    PageImage page = 2;
+  }
+}
+
+// Per-document options, sent once as the first message.
+message ParseOptions {
+  // How each page is shown to the model. Unspecified means BASE.
+  ViewMode view_mode = 1;
+  // Number of pages in the document; required. It drives the page-count
+  // guard, which makes the model emit exactly one page marker per page.
+  uint32 page_count = 2;
+  // Pages per decode window; 0 means the server default.
+  uint32 page_window = 3;
+  // Per-page decode step cap; 0 means the server default. A page that
+  // reaches it is closed and reported with PAGE_FAILURE_CODE_TOKEN_CAP.
+  uint32 max_tokens_per_page = 4;
+  // Stream Block events.
+  bool emit_blocks = 5;
+  // Stream PageDocument fragments.
+  bool emit_page_documents = 6;
+  // Send the folded Document before ParseComplete.
+  bool emit_document = 7;
+  reserved 8;
+  reserved "emit_diagnostics";
+  // End the stream with ABORTED at the first PageFailure.
+  bool abort_on_error = 9;
+}
+
+// How a page is shown to the model.
+enum ViewMode {
+  // The server default, BASE.
+  VIEW_MODE_UNSPECIFIED = 0;
+  // One 1024 x 1024 letterboxed global view per page.
+  VIEW_MODE_BASE = 1;
+  // The global view plus 640 x 640 tiles chosen by aspect ratio.
+  VIEW_MODE_TILED = 2;
+}
+
+// One page raster.
+message PageImage {
+  // 1-based page number, at most ParseOptions.page_count.
+  uint32 page_no = 1;
+  // The page raster, PNG or JPEG. The only bytes field on this contract:
+  // it is the page itself, not structure.
+  bytes png = 2;
+  // Raster width in pixels; 0 means read it from the image.
+  uint32 width_px = 3;
+  // Raster height in pixels; 0 means read it from the image.
+  uint32 height_px = 4;
+}
+
+// One server-to-client event on the ParseDocument stream.
+message ParseDocumentResponse {
+  // Exactly one event kind per message.
+  oneof event {
+    // A page window started decoding.
+    WindowStarted window_started = 1;
+    // A layout block closed (only with emit_blocks).
+    Block block = 2;
+    // A page closed: its Document fragment (only with emit_page_documents).
+    PageDocument page_document = 3;
+    // A page failed or was cut short.
+    PageFailure page_failure = 4;
+    // A block continues another one.
+    ContinuationLink continuation = 5;
+    // The folded Document (only with emit_document).
+    ai.pipestream.document.v1.Document document = 6;
+    // Every decode step of one page; always sent, once per page as it
+    // closes, and never behind an option.
+    PageTokens tokens = 7;
+    // The trailer, last on every stream that completes.
+    ParseComplete complete = 8;
+  }
+}
+
+// A page window started decoding.
+message WindowStarted {
+  // 0-based index of the window within the document.
+  uint32 window_index = 1;
+  // First page number of the window.
+  uint32 first_page_no = 2;
+  // Last page number of the window, inclusive.
+  uint32 last_page_no = 3;
+  // Prompt tokens the window's prefill consumed.
+  uint64 prompt_tokens = 4;
+}
+
+// One layout block, emitted the moment its content closes.
+message Block {
+  // Page the block is on.
+  uint32 page_no = 1;
+  // Reading order within the page, from 0.
+  uint32 ordinal = 2;
+  // The block's kind, from its label with any cross_ or append_ prefix
+  // removed.
+  BlockKind kind = 3;
+  // Whether the block continues onto, or from, another page.
+  Continuation continuation = 4;
+  // The decoded heading level, for TITLE blocks that carry one.
+  optional uint32 heading_level = 5;
+  // The block's box, clamped to 0..1000; unset when the model wrote none.
+  NormalizedBox box = 6;
+  // A same-page <MERGE> joins this block to the one before it.
+  bool merges_with_previous = 7;
+  // The label exactly as generated ("cross_table", "foo").
+  string label_text = 8;
+  // Every box coordinate as generated, before clamping, extra ones
+  // included.
+  repeated int32 raw_box = 9;
+  // The block's content, by kind.
+  oneof content {
+    // Text, titles, furniture, captions, footnotes, references, asides,
+    // algorithms and unrecognised text.
+    TextContent text = 10;
+    // A table.
+    TableContent table = 11;
+    // A picture region: image, figure, chart or seal.
+    PictureRegion picture = 12;
+    // An equation.
+    FormulaContent formula = 13;
+  }
+  // Document-wide index of the first decode step the block came from.
+  uint32 first_step = 14;
+  // Document-wide index of the last decode step the block came from,
+  // inclusive.
+  uint32 last_step = 15;
+}
+
+// What a block is.
+enum BlockKind {
+  // Never sent.
+  BLOCK_KIND_UNSPECIFIED = 0;
+  // Body text ("text").
+  BLOCK_KIND_TEXT = 1;
+  // A title or heading ("title").
+  BLOCK_KIND_TITLE = 2;
+  // Page header furniture ("header").
+  BLOCK_KIND_PAGE_HEADER = 3;
+  // Page footer furniture ("footer").
+  BLOCK_KIND_PAGE_FOOTER = 4;
+  // A page number ("page_number").
+  BLOCK_KIND_PAGE_NUMBER = 5;
+  // An image ("image", "picture", "img").
+  BLOCK_KIND_IMAGE = 6;
+  // A figure ("figure").
+  BLOCK_KIND_FIGURE = 7;
+  // A chart ("chart").
+  BLOCK_KIND_CHART = 8;
+  // A seal or stamp ("seal").
+  BLOCK_KIND_SEAL = 9;
+  // A table ("table").
+  BLOCK_KIND_TABLE = 10;
+  // An image caption ("image_caption").
+  BLOCK_KIND_IMAGE_CAPTION = 11;
+  // An image footnote ("image_footnote").
+  BLOCK_KIND_IMAGE_FOOTNOTE = 12;
+  // A page footnote ("page_footnote").
+  BLOCK_KIND_PAGE_FOOTNOTE = 13;
+  // An equation ("equation").
+  BLOCK_KIND_EQUATION = 14;
+  // A reference list entry ("ref_text").
+  BLOCK_KIND_REFERENCE = 15;
+  // Side text ("aside_text").
+  BLOCK_KIND_ASIDE = 16;
+  // An algorithm or code listing ("algorithm").
+  BLOCK_KIND_ALGORITHM = 17;
+  // Text the block grammar could not attach to a known label, verbatim.
+  BLOCK_KIND_UNRECOGNISED = 18;
+}
+
+// Whether a block is whole or one part of a block split across pages.
+enum Continuation {
+  // A whole block.
+  CONTINUATION_UNSPECIFIED = 0;
+  // The block continues on the next page (a cross_ label).
+  CONTINUATION_CONTINUES_ON_NEXT_PAGE = 1;
+  // The block continues one from the previous page (an append_ label).
+  CONTINUATION_CONTINUED_FROM_PREVIOUS = 2;
+}
+
+// A page-relative box on the model's 0..1000 grid.
+message NormalizedBox {
+  // Left edge.
+  uint32 x1 = 1;
+  // Top edge.
+  uint32 y1 = 2;
+  // Right edge.
+  uint32 x2 = 3;
+  // Bottom edge.
+  uint32 y2 = 4;
+}
+
+// Text content.
+message TextContent {
+  // The text with layout control tokens removed and outer whitespace
+  // trimmed; for UNRECOGNISED blocks, verbatim.
+  string text = 1;
+}
+
+// Equation content.
+message FormulaContent {
+  // The equation as generated (LaTeX).
+  string latex = 1;
+}
+
+// A picture region. The box is the payload; gRParse crops the raster.
+message PictureRegion {
+  // Any text the model wrote inside the region, kept so nothing it
+  // returned is lost.
+  string text = 1;
+}
+
+// Table content: the HTML as generated plus its typed cells.
+message TableContent {
+  // Rows in the cell grid.
+  uint32 row_count = 1;
+  // Columns in the cell grid.
+  uint32 column_count = 2;
+  // Every cell, in source order.
+  repeated TableCellContent cells = 3;
+  // Leading rows of an append_ fragment that repeat the header of the
+  // table it continues; set on the folded table only.
+  uint32 repeated_header_rows_dropped = 4;
+  // The table's HTML verbatim, as generated.
+  string source_html = 5;
+}
+
+// One table cell.
+message TableCellContent {
+  // 0-based row of the cell's top-left corner.
+  uint32 row = 1;
+  // 0-based column of the cell's top-left corner.
+  uint32 column = 2;
+  // Rows spanned, at least 1.
+  uint32 row_span = 3;
+  // Columns spanned, at least 1.
+  uint32 col_span = 4;
+  // The cell is a header cell (th).
+  bool header = 5;
+  // The cell's text, tags removed.
+  string text = 6;
+}
+
+// A block on one page continues a block on the same or another page.
+message ContinuationLink {
+  // Page of the earlier block.
+  uint32 from_page_no = 1;
+  // Ordinal of the earlier block.
+  uint32 from_ordinal = 2;
+  // Page of the later block.
+  uint32 to_page_no = 3;
+  // Ordinal of the later block.
+  uint32 to_ordinal = 4;
+  // Kind of the later block.
+  BlockKind kind = 5;
+  // Why the two blocks are joined.
+  ContinuationLinkKind link_kind = 6;
+}
+
+// Why two blocks are joined.
+enum ContinuationLinkKind {
+  // Never sent.
+  CONTINUATION_LINK_KIND_UNSPECIFIED = 0;
+  // An append_ block continues the open cross_ (or table) chain.
+  CONTINUATION_LINK_KIND_CROSS_PAGE = 1;
+  // A same-page <MERGE> joins two text or title columns.
+  CONTINUATION_LINK_KIND_MERGE = 2;
+}
+
+// One page's Document fragment, sent as the page closes.
+message PageDocument {
+  // The page.
+  uint32 page_no = 1;
+  // The page's items, page-local and unjoined.
+  ai.pipestream.document.v1.Document document = 2;
+}
+
+// A page failed or was cut short. Its tokens and blocks are still sent.
+message PageFailure {
+  // The page.
+  uint32 page_no = 1;
+  // What went wrong.
+  PageFailureCode code = 2;
+  // Human-readable detail with numbers; never the only carrier of a fact.
+  string detail = 3;
+}
+
+// What went wrong with a page.
+enum PageFailureCode {
+  // Never sent.
+  PAGE_FAILURE_CODE_UNSPECIFIED = 0;
+  // The per-page step cap forced the page closed.
+  PAGE_FAILURE_CODE_TOKEN_CAP = 1;
+  // The no-repeat n-gram rule fired continuously.
+  PAGE_FAILURE_CODE_REPETITION = 2;
+  // The block grammar matched nothing on the page.
+  PAGE_FAILURE_CODE_UNPARSEABLE_OUTPUT = 3;
+  // The page raster could not be decoded.
+  PAGE_FAILURE_CODE_IMAGE_DECODE = 4;
+  // The engine failed while decoding the page.
+  PAGE_FAILURE_CODE_INFERENCE = 5;
+}
+
+// Every decode step of one page, in order: the page's <PAGE> step first,
+// and after the last page the closing EOS step.
+message PageTokens {
+  // The page.
+  uint32 page_no = 1;
+  // Document-wide index of steps[0].
+  uint32 first_step = 2;
+  // The steps.
+  repeated TokenStep steps = 3;
+  // The steps decoded to text, special tokens kept.
+  string text = 4;
+}
+
+// One decode step.
+message TokenStep {
+  // The chosen token id.
+  uint32 token = 1;
+  // The token's vocabulary entry, before byte decoding.
+  string piece = 2;
+  // Log-probability of the chosen token under the raw logits.
+  float logprob = 3;
+  // The model's own top token under the raw logits.
+  uint32 model_token = 4;
+  // Log-probability of the model's top token.
+  float model_logprob = 5;
+  // Which rule, if any, overrode the model's top token.
+  Intervention intervention = 6;
+}
+
+// Which logit rule chose the token instead of the model.
+enum Intervention {
+  // Never sent.
+  INTERVENTION_UNSPECIFIED = 0;
+  // The model's top token was chosen.
+  INTERVENTION_NONE = 1;
+  // The no-repeat n-gram rule banned the model's top token.
+  INTERVENTION_REPEAT_BAN = 2;
+  // The page-count guard or the per-page step cap chose the token.
+  INTERVENTION_PAGE_GUARD = 3;
+}
+
+// The trailer, sent last on every stream that completes.
+message ParseComplete {
+  // Pages that closed without a failure.
+  uint32 pages_ok = 1;
+  // Pages with a PageFailure.
+  uint32 pages_failed = 2;
+  // Prompt tokens over all windows.
+  uint64 prompt_tokens = 3;
+  // Decode steps over all windows, EOS steps included.
+  uint64 completion_tokens = 4;
+  // Why the last window's decode ended.
+  ai.pipestream.document.v1.VlmStopReason stop_reason = 5;
+  // Wall time spent in prefill and decode, in microseconds.
+  uint64 decode_microseconds = 6;
+}
+
+// Request for GetServiceInfo. Empty by design.
+message GetServiceInfoRequest {}
+
+// Build, model and capability facts for this server process.
+message GetServiceInfoResponse {
+  // Semantic version of this server build.
+  string version = 1;
+  // Active compute backend: "cuda", "intel-gpu", "metal", "cpu" or
+  // "reference".
+  string backend = 2;
+  // The device the backend runs on, as the backend names it.
+  string device = 3;
+  // Model id, "Unlimited-OCR-2".
+  string model = 4;
+  // sha256 of the models/MANIFEST the server was built with.
+  string manifest_sha256 = 5;
+  // Weight format in use: "bf16", "int8" or "int4".
+  string weight_format = 6;
+  // Default pages per decode window.
+  uint32 page_window = 7;
+  // Default per-page decode step cap.
+  uint32 max_tokens_per_page = 8;
+  // Maximum pages per document.
+  uint32 max_pages = 9;
+  // Maximum page raster size in bytes.
+  uint64 max_page_bytes = 10;
+  // Documents decoded at once; further streams wait for a slot.
+  uint32 documents_in_flight = 11;
+  // Frontend advertisement for the shared demo shell.
+  UiInfo ui = 12;
+}
+
+// Frontend advertisement. Same shape in every ai-pipestream grpc service:
+// the demo shell reads it to build its tab bar.
+message UiInfo {
+  // Tab title, e.g. "Unlimited OCR".
+  string title = 1;
+  // Shell mount path, e.g. "/ui/unlimited-ocr".
+  string path = 2;
+  // One line, used as the tab tooltip.
+  string description = 3;
+}
