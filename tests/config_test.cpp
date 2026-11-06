@@ -19,6 +19,10 @@ int main() {
     ::setenv("GRPC_UOCR_MAX_PAGE_BYTES", "4096", 1);
     const auto set = load_config_from_env();
     require(set.backend == "reference" && set.page_window == 4, "overrides");
+    require(set.weight_format == "fp32", "reference reports actual fp32 precision");
+    ::setenv("GRPC_UOCR_WEIGHT_FORMAT", "int8", 1);
+    require_throws([] { load_config_from_env(); }, "reference refuses ignored quantization");
+    ::unsetenv("GRPC_UOCR_WEIGHT_FORMAT");
     require(set.max_stream_buffered_bytes == 4 * 4096, "the stream budget follows the page cap");
 
     ::setenv("GRPC_UOCR_BACKEND", "tpu", 1);
