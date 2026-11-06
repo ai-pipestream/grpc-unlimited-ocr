@@ -66,3 +66,37 @@ memory. Cross-window KV carryover and gRParse wiring remain separate work.
 The requested shared-schema copy was not applied because the source also
 adds source attributes, sheet table declarations, document metadata, and
 cell formula/style fields beyond PageQuality.text_layer_replaced.
+
+## Actual file verification receipt
+
+Rechecked on 2026-11-06 at 23:59 UTC on krick. The directory used by the
+real-weight metadata probe is `/work/models/unlimited-ocr-2`. SHA256 checks
+against every entry in models/MANIFEST succeeded for all 8 files, including
+both safetensors shards. The recheck log is
+`/tmp/uocr-bounds-model-hashes-recheck.log`. This verifies file contents,
+not just sizes. A deployment mounting a different directory must repeat
+this verification against that directory.
+
+- Model: `baidu/Unlimited-OCR-2`
+- Upstream revision: `5632329a32e103d5f1add270681e0f5c1233c6e4`
+- Probe backend: `reference`
+- Probe execution precision: `fp32`
+- Probe device: `cpu (fp32 reference)`
+- MANIFEST SHA256: `858dd87a290712f285a670190e160695e902e258e74bdedd2c6fceca90ed33e1`
+
+Fixture identities for the prepared inference tests:
+
+- `tests/goldens/quickstart-p2/page.png`: `639d6d2006313ac89d99e85f3f00038abec91e281f2975f28db28ffce97ed139`
+- `tests/goldens/quickstart-p2/output_raw.txt`: `25f3819e16a327d3965758d97dbb9313c0532e380d4bda7a559ba6340526091e`
+- `tests/goldens/quickstart-p2/tokens.txt`: `0bb7ecf74053c0f79c3431d767245976d2abd83b42e4b9429cc5c48a7aa78227`
+
+The fixture comes from page 2 of the quickstart sample, rendered at 150 dpi.
+The two-page transport test repeats that raster. The metadata probe does
+not run inference on this fixture. No CUDA inference result is recorded.
+
+`GetServiceInfoResponse.manifest_sha256` already describes the manifest
+used at build time. CMake computes that value from the repository file.
+The service does not verify mounted file hashes during startup; architecture
+checks do not substitute for that verification. The successful file checks
+above are separate evidence and must not be inferred from this RPC field.
+No wire changes were needed for this receipt.
