@@ -32,6 +32,9 @@ class Budget {
   // counts as one. `halted` is polled, since nothing signals it; when it
   // turns true first, the returned lease is empty.
   Lease acquire(std::size_t amount, const std::function<bool()>& halted);
+  // Partial decode windows must never wait for leases held by other
+  // incomplete windows. Refuse admission when the process is full.
+  Lease try_acquire(std::size_t amount);
 
   std::size_t capacity() const { return capacity_; }
 
@@ -118,6 +121,14 @@ inline Lease Budget::acquire(std::size_t amount, const std::function<bool()>& ha
     }
     changed_.wait_for(lock, kPollInterval);
   }
+}
+
+inline Lease Budget::try_acquire(std::size_t amount) {
+  amount = std::max<std::size_t>(amount, 1);
+  std::lock_guard lock(mutex_);
+  if (amount > capacity_ - used_) return {};
+  used_ += amount;
+  return Lease(this, amount);
 }
 
 }  // namespace uocr::service

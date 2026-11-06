@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <stdexcept>
 #include <utility>
 
 namespace uocr::service {
@@ -14,12 +15,20 @@ namespace uocr::service {
 template <typename T>
 class Channel {
  public:
-  void push(T value) {
+  explicit Channel(std::size_t max_bytes = 16ULL * 1024 * 1024) : max_bytes_(max_bytes) {}
+
+  bool push(T value) {
+    const std::size_t bytes = value.SpaceUsedLong() + sizeof(T);
+    if (bytes > max_bytes_) throw std::length_error("response exceeds output byte budget");
     {
-      std::lock_guard lock(mutex_);
+      std::unique_lock lock(mutex_);
+      ready_.wait(lock, [&] { return closed_ || bytes <= max_bytes_ - held_; });
+      if (closed_) return false;
+      held_ += bytes;
       queue_.push_back(std::move(value));
     }
     ready_.notify_one();
+    return true;
   }
 
   void close() {
@@ -37,8 +46,10 @@ class Channel {
     std::unique_lock lock(mutex_);
     if (!ready_.wait_for(lock, timeout, [&] { return closed_ || !queue_.empty(); })) return Popped::kTimeout;
     if (queue_.empty()) return Popped::kClosed;
+    held_ -= queue_.front().SpaceUsedLong() + sizeof(T);
     *value = std::move(queue_.front());
     queue_.pop_front();
+    ready_.notify_all();
     return Popped::kValue;
   }
 
@@ -47,6 +58,8 @@ class Channel {
   std::condition_variable ready_;
   std::deque<T> queue_;
   bool closed_ = false;
+  const std::size_t max_bytes_;
+  std::size_t held_ = 0;
 };
 
 }  // namespace uocr::service

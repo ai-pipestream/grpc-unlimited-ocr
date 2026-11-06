@@ -12,13 +12,13 @@ constexpr auto kPollInterval = std::chrono::milliseconds(50);
 
 }  // namespace
 
-PageIntake::Room PageIntake::wait_for_room(std::uint32_t page_no, std::size_t bytes,
+PageIntake::Room PageIntake::wait_for_room(std::uint32_t /*page_no*/, std::size_t bytes,
                                            const std::function<bool()>& halted) {
   std::unique_lock lock(mutex_);
   while (true) {
     if (halted_ || (halted && halted())) return Room::kHalted;
-    const bool needed = waiting_first_ != 0 && page_no >= waiting_first_ && page_no <= waiting_last_;
-    if (needed || held_ == 0 || held_ + bytes <= budget_) {
+    if (bytes > budget_) return Room::kStuck;
+    if (bytes <= budget_ - held_) {
       held_ += bytes;
       return Room::kAdmitted;
     }
@@ -31,6 +31,7 @@ void PageIntake::add(IntakePage page) {
   {
     std::lock_guard lock(mutex_);
     const std::uint32_t page_no = page.page_no;
+    received_.insert(page_no);
     pages_.emplace(page_no, std::move(page));
   }
   changed_.notify_all();
@@ -38,7 +39,7 @@ void PageIntake::add(IntakePage page) {
 
 bool PageIntake::has(std::uint32_t page_no) const {
   std::lock_guard lock(mutex_);
-  return pages_.contains(page_no);
+  return received_.contains(page_no);
 }
 
 void PageIntake::end_of_input() {

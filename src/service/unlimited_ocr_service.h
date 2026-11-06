@@ -4,9 +4,8 @@
 // threads: the RPC thread reads pages into the stream's intake (stopping
 // when the stream's byte budget is full, so gRPC flow control holds the
 // client back), a session thread decodes windows as they complete, and a
-// writer thread drains events onto the wire. Decoded events are queued
-// without a bound: they are small next to the rasters, and a client that
-// stops reading only delays its own stream.
+// writer thread drains events onto the wire. The output queue has a byte
+// cap; a slow reader blocks decoding, and cancellation wakes producers.
 
 #include <atomic>
 #include <functional>

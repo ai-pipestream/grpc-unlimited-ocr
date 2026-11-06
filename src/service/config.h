@@ -16,7 +16,7 @@ struct Config {
   // ones this build carries are accepted.
   std::string backend = "cuda";
   std::uint32_t device_index = 0;
-  // bf16, int8 or int4 decoder weights.
+  // bf16 or int8 on CUDA; the reference backend requires fp32.
   std::string weight_format = "bf16";
   std::string models_dir = "/models";
   // Pages per decode window, and the per-page decode step cap, when a
@@ -31,12 +31,16 @@ struct Config {
   // Per-stream caps.
   std::uint32_t max_pages = 512;
   std::size_t max_page_bytes = 32ULL * 1024 * 1024;
+  std::uint64_t max_page_pixels = 40ULL * 1000 * 1000;
+  // Protobuf SpaceUsedLong plus object overhead for queued responses.
+  // One response may be in the transport in addition to this cap.
+  std::size_t max_output_buffered_bytes = 16ULL * 1024 * 1024;
   // Bytes of page rasters one stream may hold read but not yet decoded,
   // and the same across every stream. A stream at its cap stops reading,
   // so gRPC flow control holds the client back.
   std::size_t max_stream_buffered_bytes = 4 * (32ULL * 1024 * 1024);
   std::size_t max_buffered_bytes = 16 * (32ULL * 1024 * 1024);
-  // Documents decoding at once; further streams wait for a slot.
+  // Documents decoding or draining responses; further streams wait for a slot.
   std::uint32_t documents_in_flight = 1;
 };
 

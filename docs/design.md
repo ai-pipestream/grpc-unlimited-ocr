@@ -940,3 +940,15 @@ about 14 weeks.
    are on cm5ai1 and rpiai1 (4.6). A Hailo-8 runs the vision encoder
    only. Measure it with the Pi CPU doing the decode, or move one next to
    nano1 or an x86 box?
+
+### Server hardening follow-up
+
+Raster admission now rejects an incomplete window that exceeds its stream
+budget, and rejects global budget exhaustion instead of blocking with
+partial-window leases held. Duplicate history lasts for the request.
+A raster pixel cap applies before decode, using actual header dimensions.
+The response queue has a configurable byte cap and wakes blocked producers
+on cancellation. These are admission and queue bounds, not a promise that
+the entire process fits inside the raster budget: model tensors, page
+traces, and the requested folded Document remain separate allocations.
+Reference precision is explicitly fp32; unsupported quantization is refused.

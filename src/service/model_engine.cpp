@@ -60,7 +60,8 @@ class ModelEngine final : public Engine {
   }
 
   EngineInfo info() const override {
-    return {config_.backend, device_, config_.weight_format, UOCR_MANIFEST_SHA256};
+    return {config_.backend, device_, config_.backend == "reference" ? "fp32" : config_.weight_format,
+            UOCR_MANIFEST_SHA256};
   }
 
   std::string piece(std::uint32_t token) const override { return tokenizer_.piece(token); }
@@ -116,6 +117,9 @@ class ModelEngine final : public Engine {
  private:
   void build_backend() {
     if (config_.backend == "reference") {
+      if (config_.weight_format != "fp32") {
+        throw std::invalid_argument("the reference backend requires fp32, not " + config_.weight_format);
+      }
       vision_ = std::make_unique<VisionEncoder>(*weights_);
       reference_decoder_ = std::make_unique<Decoder>(*weights_);
       decoder_ = std::make_unique<ReferenceDecoder>(*reference_decoder_);

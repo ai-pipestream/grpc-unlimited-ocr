@@ -51,7 +51,9 @@ Config load_config_from_env() {
   c.listen_address = configured_string("GRPC_UOCR_LISTEN_ADDRESS", c.listen_address);
   c.backend = configured_choice("GRPC_UOCR_BACKEND", c.backend, {"cuda", "intel-gpu", "metal", "cpu", "reference"});
   c.device_index = configured_u32("GRPC_UOCR_DEVICE_INDEX", c.device_index, 0, 63);
-  c.weight_format = configured_choice("GRPC_UOCR_WEIGHT_FORMAT", c.weight_format, {"bf16", "int8", "int4"});
+  c.weight_format = c.backend == "reference"
+      ? configured_choice("GRPC_UOCR_WEIGHT_FORMAT", "fp32", {"fp32"})
+      : configured_choice("GRPC_UOCR_WEIGHT_FORMAT", c.weight_format, {"bf16", "int8"});
   c.models_dir = configured_string("GRPC_UOCR_MODELS_DIR", c.models_dir);
   c.page_window = configured_u32("GRPC_UOCR_PAGE_WINDOW", c.page_window, 1, 64);
   c.max_tokens_per_page = configured_u32("GRPC_UOCR_MAX_TOKENS_PER_PAGE", c.max_tokens_per_page, 16, 131072);
@@ -61,6 +63,9 @@ Config load_config_from_env() {
       configured_u32("GRPC_UOCR_NGRAM_WINDOW_SINGLE_PAGE", c.ngram_window_single_page, 1, 131072);
   c.max_pages = configured_u32("GRPC_UOCR_MAX_PAGES", c.max_pages, 1, 100000);
   c.max_page_bytes = configured_number("GRPC_UOCR_MAX_PAGE_BYTES", c.max_page_bytes, 1024, kGiB);
+  c.max_page_pixels = configured_number("GRPC_UOCR_MAX_PAGE_PIXELS", c.max_page_pixels, 1, 100000000);
+  c.max_output_buffered_bytes = configured_number("GRPC_UOCR_MAX_OUTPUT_BUFFERED_BYTES",
+                                                  c.max_output_buffered_bytes, 1024, kGiB);
   c.max_stream_buffered_bytes = configured_number("GRPC_UOCR_MAX_STREAM_BUFFERED_BYTES", 4 * c.max_page_bytes,
                                                   c.max_page_bytes, 64 * kGiB);
   c.max_buffered_bytes = configured_number("GRPC_UOCR_MAX_BUFFERED_BYTES", 16 * c.max_page_bytes,

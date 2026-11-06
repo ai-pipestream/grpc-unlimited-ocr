@@ -4,14 +4,15 @@ A gRPC collector that runs the Unlimited-OCR 2 document model and streams
 typed layout blocks and per-page `ai.pipestream.document.v1.Document`
 fragments back to the caller. The model runs on a native engine in this
 repo: weights load directly from the upstream safetensors, the forward
-pass is C++, and each hardware target is one backend written at that
-target's lowest level (CUDA, Intel SYCL/oneDNN, Apple Metal, and a Hailo
-offload for the vision encoder). There is no inference runtime and no
+pass is C++. Implemented backends are the fp32 CPU reference and CUDA
+(bf16 and int8). Intel SYCL/oneDNN, Apple Metal, Hailo offload and int4
+remain planned, not selectable working backends. There is no inference runtime and no
 Python at build or run time.
 
 **Status:** the reference engine matches the upstream implementation token
 for token, and the CUDA backend runs a page end to end (on an RTX 4080
-SUPER: 0.3 s of prefill per page, about 285 tokens per second end to end).
+SUPER: a historical single-page CLI measurement recorded 0.3 s of prefill
+and about 285 decode tokens per second, not gRPC end-to-end throughput).
 The gRPC server (`ai.pipestream.unlimitedocr.v1.UnlimitedOcrService`, port
 50073) streams every decode step, the parsed blocks, per-page `Document`
 fragments and the folded `Document`.
@@ -78,3 +79,35 @@ Configuration is `GRPC_UOCR_*` environment variables (see
 Apache-2.0. The model weights and the upstream code this engine ports are
 MIT-licensed by Baidu; see [`NOTICE`](NOTICE). Upstream does not state the
 provenance of its training data.
+
+## Server resource limits
+
+`GRPC_UOCR_MAX_PAGE_PIXELS` defaults to 40 million pixels and is checked
+against the raster header before image allocation. Supplied page dimensions
+must agree with that header. Compressed input caps still apply separately.
+
+Each decode window must fit `GRPC_UOCR_MAX_STREAM_BUFFERED_BYTES`. If it
+cannot, the RPC returns `RESOURCE_EXHAUSTED`; it does not exceed the cap or
+wait for an incomplete window to free itself. Global raster admission is
+also fail-fast when `GRPC_UOCR_MAX_BUFFERED_BYTES` is full. Callers can retry
+with a smaller window, smaller rasters, or less concurrent work. Duplicate
+page numbers are rejected even after their original window was consumed.
+
+`GRPC_UOCR_MAX_OUTPUT_BUFFERED_BYTES` defaults to 16 MiB. It bounds queued
+responses using protobuf's `SpaceUsedLong()` estimate plus object overhead;
+a slow reader blocks the producer. A document slot is retained until the
+writer finishes, so slow readers cannot accumulate queues beyond the
+configured document concurrency. One additional response per active document
+may be in the transport, and the model,
+current page tokens, and optional folded Document have separate memory
+costs. An individual response larger than the queue cap fails the RPC with
+`RESOURCE_EXHAUSTED`. Cancellation releases blocked producers and leases.
+
+The reference backend computes and reports `fp32`. With
+`GRPC_UOCR_BACKEND=reference`, leave `GRPC_UOCR_WEIGHT_FORMAT` unset or use
+`fp32`; other values are refused. CUDA supports `bf16` and `int8`.
+
+The opt-in `server_model_stream_test` exercises real weights over gRPC with
+one page, two pages, delayed reads, and cancellation. It skips without
+`UOCR_MODELS_DIR`; run it on an available device, not beside busy GPU jobs.
+The scripted transport tests and queue tests do not prove model inference.

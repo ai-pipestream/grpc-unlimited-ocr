@@ -106,6 +106,7 @@ class FakeEngine final : public service::Engine {
   std::atomic<int> decodes{0};
   std::atomic<int> concurrent{0};
   std::atomic<int> max_concurrent{0};
+  std::atomic<std::size_t> steps_emitted{0};
   std::vector<std::size_t> window_sizes;  // pages each decode call got
 
   service::EngineInfo info() const override { return {"fake", "none", "bf16", "0"}; }
@@ -152,6 +153,7 @@ class FakeEngine final : public service::Engine {
         s.rule = service::StepRule::kRepeatBan;
         s.model_token = ids[i] + 1;
       }
+      ++steps_emitted;
       if (!step(s)) return {100 * request.pages.size(), service::WindowFinish::kStopped};
     }
     return {100 * request.pages.size(), script.finish};

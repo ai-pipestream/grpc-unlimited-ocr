@@ -71,13 +71,15 @@ grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool
   if (auto refused = resolve_options(request.options(), config_, &options)) return *refused;
 
   PageIntake intake(options.page_count, config_.max_stream_buffered_bytes);
-  Channel<Response> events;
+  Channel<Response> events(config_.max_output_buffered_bytes);
   std::atomic<bool> halt{false};
   std::atomic<bool> client_gone{false};
+  std::atomic<bool> output_exhausted{false};
   auto halted = [&] { return halt.load(); };
   auto stop = [&] {
     halt = true;
     intake.halt();
+    events.close();
   };
 
   std::thread writer([&] {
@@ -99,11 +101,21 @@ grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool
   });
 
   SessionEnd end = SessionEnd::kStopped;
+  // Keep the slot until both decode and transport finish. Otherwise slow
+  // readers can each retain a full output queue after freeing a decode slot.
+  Lease document_slot;
   std::thread session_thread([&] {
-    const Lease slot = document_slots_.acquire(1, halted);
-    if (!slot) return;
+    document_slot = document_slots_.acquire(1, halted);
+    if (!document_slot) return;
     DocumentSession session(engine_, engine_mutex_, options, intake,
-                            [&](Response event) { events.push(std::move(event)); }, halted);
+                            [&](Response event) {
+                              try {
+                                if (!events.push(std::move(event))) stop();
+                              } catch (const std::length_error&) {
+                                output_exhausted = true;
+                                stop();
+                              }
+                            }, halted);
     end = session.run();
     if (end != SessionEnd::kComplete) stop();
   });
@@ -133,6 +145,10 @@ grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool
   }
   if (client_gone.load() || (cancelled && cancelled())) {
     return grpc::Status(grpc::StatusCode::CANCELLED, "the client cancelled the stream");
+  }
+  if (output_exhausted.load()) {
+    ++documents_failed;
+    return {grpc::StatusCode::RESOURCE_EXHAUSTED, "a response exceeds the output byte budget"};
   }
   switch (end) {
     case SessionEnd::kComplete:
@@ -172,19 +188,28 @@ std::optional<grpc::Status> UnlimitedOcrServiceImpl::admit_page(v1::PageImage& p
   } catch (const ImageError& error) {
     in.image_error = error.what();
   }
-  if (page.width_px() != 0 && page.height_px() != 0) in.size = {page.width_px(), page.height_px()};
+  if (in.image_error.empty()) {
+    const auto pixels = static_cast<std::uint64_t>(in.size.width_px) * in.size.height_px;
+    if (pixels == 0 || pixels > config_.max_page_pixels) {
+      return grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED, "raster exceeds the page pixel budget");
+    }
+    if ((page.width_px() != 0 && page.width_px() != in.size.width_px) ||
+        (page.height_px() != 0 && page.height_px() != in.size.height_px)) {
+      return invalid("page dimensions disagree with the raster");
+    }
+  }
   const PageIntake::Room room = intake.wait_for_room(in.page_no, in.raster.size(), halted);
   if (room == PageIntake::Room::kStuck) {
     return grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED,
-                        "pages sent ahead of the decoding window filled the stream's " +
+                        "the pending decode window or pages sent ahead filled the stream's " +
                             std::to_string(config_.max_stream_buffered_bytes) +
-                            " byte budget; send pages in window order");
+                            " byte budget; reduce the window or rasters and send pages in window order");
   }
   if (room == PageIntake::Room::kHalted) return grpc::Status::OK;
-  in.process_bytes = buffered_bytes_.acquire(in.raster.size(), halted);
+  in.process_bytes = buffered_bytes_.try_acquire(in.raster.size());
   if (!in.process_bytes) {
     intake.release(in.raster.size());
-    return grpc::Status::OK;
+    return grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED, "the server raster byte budget is full");
   }
   intake.add(std::move(in));
   return std::nullopt;
