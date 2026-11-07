@@ -48,24 +48,52 @@ Logs on krick:
 
 ## Remaining evidence
 
-The fresh gRPC 1.83.0 build has a separate log at
-/tmp/uocr-bounds-pinned-build.log. A successful exit and subsequent tests
-are required before calling that build verified.
+The pinned gRPC 1.83.0 build completed successfully, including regenerated
+protobuf sources, the server executable and every project test executable.
+The project suite passed 27 tests, with 0 failures and 6 model-dependent
+skips (33 registered). Both slow-reader regressions ran in this suite.
+The build used GCC 15.3, Debug and UOCR_WERROR=ON without permissive flags.
+Upstream gRPC emitted warnings, including a reflection serialization return
+value warning; these were not first-party errors.
+Logs: /tmp/uocr-bounds-pinned-build.log,
+/tmp/uocr-pinned-project-build.log and /tmp/uocr-pinned-project-tests.log.
+The default all target also builds unused gRPC variants, so the final build
+named the server and all project test executables explicitly.
 
 CUDA inference was not run: the RTX 4080 SUPER remained at 100% utilization
 and about 9.6 GiB allocated, with other projects active. No jobs were stopped.
 server_model_stream_test prepares one-page and two-page inference, delayed
-reads, and cancellation for an available device. These cases require a
-CUDA build or a scheduled reference inference run.
+reads, and cancellation. The reference run described below completed these
+cases; no CUDA inference receipt is claimed.
 
 The response limit uses protobuf SpaceUsedLong plus message overhead.
 It does not measure total process memory: tensors, transport buffers,
 current page traces, and the optional combined Document consume additional
 memory. Cross-window KV carryover and gRParse wiring remain separate work.
+Cancellation releases blocked output producers, but the native engine checks
+the stop request at token callbacks. It does not interrupt an in-flight
+vision encode or decoder prefill. The real-model cancellation test waits
+for WindowStarted after prefill; it does not prove prefill cancellation
+latency. Adding cancellation points inside native model execution remains
+separate work.
 
-The requested shared-schema copy was not applied because the source also
-adds source attributes, sheet table declarations, document metadata, and
-cell formula/style fields beyond PageQuality.text_layer_replaced.
+The parent approved the full canonical schema after reviewing all additions.
+The vendored document.proto now matches gRParse-typed-review/document.proto
+byte for byte, including source attributes, sheet table declarations,
+document metadata, cell formula/style fields, and PageQuality.text_layer_replaced.
+Buf breaking with the previous copy, lint and format all pass. The generated
+service rebuild and all 12 targeted service/resource tests pass with installed
+gRPC 1.51.1. Logs: /tmp/uocr-canonical-service-build.log and
+/tmp/uocr-canonical-tests.log.
+
+## CI trigger
+
+Commit 4a0a32d was docs-only with a CI skip marker. Feature pushes alone do
+not trigger this repository's workflow, which listens for main pushes and
+pull requests. Code commit 84b0ef5 has no skip marker and was pushed to
+Forgejo first, then GitHub. Opening GitHub PR 10 triggered run 42316141927
+for 84b0ef515085df49bcf89cdaf180f4b2665d248e. No manual dispatch was used.
+Forgejo PR 4 includes the original server history and the fixes for main.
 
 ## Actual file verification receipt
 
@@ -93,6 +121,35 @@ Fixture identities for the prepared inference tests:
 The fixture comes from page 2 of the quickstart sample, rendered at 150 dpi.
 The two-page transport test repeats that raster. The metadata probe does
 not run inference on this fixture. No CUDA inference result is recorded.
+
+## Real reference inference
+
+Code: 84b0ef515085df49bcf89cdaf180f4b2665d248e. On 2026-11-07 UTC the
+real-model server transport test completed with exit 0 in about 10 minutes
+25 seconds, including model loading. This is a functional receipt, not a
+throughput benchmark: the host was running other projects.
+
+Build: Release, GCC 15.3, UOCR_WERROR=ON, installed gRPC 1.51.1 through the
+local adapter described above. Execution: reference backend, fp32, two
+reference threads, nice 10, 1200-second process timeout. The mounted model
+revision, hashes and fixture identities are those recorded above. Sampled
+RSS reached about 19 GiB; this is a sample, not a measured peak or memory cap.
+
+```sh
+UOCR_MODELS_DIR=/work/models/unlimited-ocr-2 GRPC_UOCR_BACKEND=reference \
+  timeout --kill-after=10s 1200s nice -n 10 stdbuf -oL \
+  build-reference/server_model_stream_test
+```
+
+The one-page and two-page requests each returned nonempty token traces,
+one page fragment per input, and successful ParseComplete over in-process
+gRPC. Reads were delayed by 10 ms per event. A subsequent real-model request
+was cancelled after WindowStarted; the client received CANCELLED and both
+input-byte and document-slot leases returned to zero. The final log prints
+`ok`. Log: /tmp/uocr-real-cpu-inference.log. This checks real inference and
+transport completion; it does not compare generated text to the golden
+tokens. Back-pressure with a fully stalled reader is covered separately by
+the deterministic slow-reader regressions, not by the 10 ms delay alone.
 
 `GetServiceInfoResponse.manifest_sha256` already describes the manifest
 used at build time. CMake computes that value from the repository file.
