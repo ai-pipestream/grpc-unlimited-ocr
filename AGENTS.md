@@ -53,6 +53,10 @@ to gRParse, which dials it as `GRPARSE_UNLIMITED_OCR_TARGET`.
 | `src/tokenizer/` | byte-level BPE decoding and special ids |
 | `src/backend/cuda/` | CUDA backend: context, device arrays, graphs, the op set (`ops.cu`) and the length-independent decode-step kernels (`decode_ops.cu`) |
 | `src/model/cuda/` | the vision encoder and decoder on the CUDA backend; the decode step is captured as one CUDA graph |
+| `proto/` | the wire contract (`unlimitedocr/v1`) and the vendored fleet `document.proto` (never edit the vendored copies) |
+| `src/output/` | the block grammar ported from upstream, the incremental block parser, HTML tables, continuation links, the Document fold |
+| `src/service/` | configuration, the `Engine` interface and the real engine behind it, page intake and budgets, one document's session, the gRPC handlers |
+| `src/server_main.cpp` | the server (`grpc-unlimited-ocr-server`, the image entrypoint) |
 | `tools/uocr_run.cpp` | developer runner: page files in, raw model output out |
 | `models/MANIFEST` | the pinned upstream files |
 | `docs/design.md` | the design; keep it in step with the code |

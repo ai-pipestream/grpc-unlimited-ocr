@@ -19,7 +19,7 @@ double log_normaliser(const std::vector<float>& logits) {
 }  // namespace
 
 GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, const std::vector<PageViews>& pages,
-                          const GenerationConfig& config, const TokenSink& sink) {
+                          const GenerationConfig& config, const TokenSink& sink, const PrefillSink& prefilled) {
   std::vector<Tensor> page_tokens;
   std::vector<std::int64_t> counts;
   for (const auto& page : pages) {
@@ -35,11 +35,11 @@ GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, cons
       std::copy_n(tokens.row(r), tokens.dim(1), embeds.row(positions[next++]));
     }
   }
-  return generate_from_embeddings(decoder, std::move(prompt), embeds, config, sink);
+  return generate_from_embeddings(decoder, std::move(prompt), embeds, config, sink, prefilled);
 }
 
 GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
-                                          const GenerationConfig& config, const TokenSink& sink) {
+                                          const GenerationConfig& config, const TokenSink& sink, const PrefillSink& prefilled) {
   const PromptTokens tokens;
   const PromptLayout layout = layout_prompt(prompt);
   const BlockPages blocks = block_image_pages(layout, decoder.block_size());
@@ -52,6 +52,7 @@ GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std
   GenerationResult result;
   result.prompt = std::move(prompt);
   std::vector<float> logits = decoder.prefill(embeds, layout);
+  if (prefilled) prefilled(result.prompt.size());
   const auto prompt_len = static_cast<std::int64_t>(result.prompt.size());
   for (std::int64_t step = 0; step < config.max_new_tokens; ++step) {
     const std::vector<float> raw = logits;

@@ -48,12 +48,18 @@ struct GenerationResult {
 // included); return false to stop early.
 using TokenSink = std::function<bool(const GeneratedToken& step)>;
 
+// Called once, after prefill and before the first step, with the prompt
+// length.
+using PrefillSink = std::function<void(std::size_t prompt_tokens)>;
+
 GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, const std::vector<PageViews>& pages,
-                          const GenerationConfig& config, const TokenSink& sink = {});
+                          const GenerationConfig& config, const TokenSink& sink = {},
+                          const PrefillSink& prefilled = {});
 
 // The same loop from prompt embeddings already built (tests drive the
 // decoder this way without a vision encoder).
 GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
-                                          const GenerationConfig& config, const TokenSink& sink = {});
+                                          const GenerationConfig& config, const TokenSink& sink = {},
+                                          const PrefillSink& prefilled = {});
 
 }  // namespace uocr

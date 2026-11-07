@@ -1,7 +1,7 @@
 # Design: the grpc-unlimited-ocr collector
 
-**Status:** design, no implementation yet. The service does not exist; this
-document is the agreement to build against.
+**Status:** P0 (reference engine), P1 (CUDA backend) and the service (P2,
+P3) are built; section 5.3 lists where the service differs from this text.
 **Updated:** 2026-10-29 (revised from an ONNX Runtime engine to a native one)
 **Upstream studied:** `baidu/Unlimited-OCR` at `48ff432` (2026-10-28) and the
 Hugging Face model repos `baidu/Unlimited-OCR-2` and `baidu/Unlimited-OCR`.
@@ -710,6 +710,28 @@ Every item carries `CollectorSource{collector: "unlimited-ocr", model:
 "Unlimited-OCR-2", version}` and a `GenerationSource` with token counts
 and stop reason, so the merge keeps attribution.
 
+### 5.3 As built
+
+- `PictureRegion` carries `text`: a picture block can hold text the model
+  wrote inside the region, and the lossless rule keeps it. The folded
+  `Document` hangs it on the `PictureItem` as a child `TextItem`.
+- `ContinuationLink.link_kind` says why two blocks are joined (an
+  append_/cross_ chain or a same-page `<MERGE>`).
+- Pages are split on the `<PAGE>` token the page-count guard counts, not on
+  text that spells it. Text before the first `<PAGE>` belongs to the first
+  page. Markers past a window's last page stay on that page.
+- The bare-label repair does not let a declaration's trailing junk cross a
+  newline or a `<` (upstream's `[^\]]*` can). That keeps every closed block
+  final, which is what makes the incremental parser match a whole-text
+  parse; the fuzz test checks it.
+- Each window is decoded with its own prompt; carrying the previous
+  window's KV tail into the next (upstream's server) is engine work for
+  P9. Continuation chains still link across windows.
+- Every item's `CollectorSource` carries the model's mean log-probability
+  over the steps behind it (`raw_score_kind` `mean_logprob`).
+- `GRPC_UOCR_DEVICE_MEMORY_CAP` is not read yet: no backend allocates from
+  a capped arena.
+
 ## 6. gRParse integration
 
 - **Contract.** Vendor `unlimited_ocr.proto` into `collectors/`, add it to
@@ -918,3 +940,25 @@ about 14 weeks.
    are on cm5ai1 and rpiai1 (4.6). A Hailo-8 runs the vision encoder
    only. Measure it with the Pi CPU doing the decode, or move one next to
    nano1 or an x86 box?
+
+### Server hardening follow-up
+
+Raster admission now rejects an incomplete window that exceeds its stream
+budget, and rejects global budget exhaustion instead of blocking with
+partial-window leases held. Duplicate history lasts for the request.
+A raster pixel cap applies before decode, using actual header dimensions.
+The response queue has a configurable byte cap and wakes blocked producers
+on cancellation. These are admission and queue bounds, not a promise that
+the entire process fits inside the raster budget: model tensors, page
+traces, and the requested folded Document remain separate allocations.
+Reference precision is explicitly fp32; unsupported quantization is refused.
+
+Transport admission now reserves a document slot before the first read or
+worker creation. Excess RPCs fail promptly. Reads stop after the declared
+page count, without requiring half-close. A per-admitted-RPC watchdog times
+blocked transport operations; input timing pauses during native inference,
+while stalled writes have an independent limit. Internal failure interrupts
+blocked reads/writes after a short drain grace. TryCancel yields CANCELLED
+on the wire; typed PageFailure events are best-effort before that point.
+There is no total inference deadline, and native encode/prefill is still
+non-preemptible. The transport watchdog does not bound native compute time.

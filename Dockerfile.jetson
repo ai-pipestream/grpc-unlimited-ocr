@@ -17,7 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
+# The gRPC server is not built here yet (gRPC from source on the Orin is
+# its own change); the image keeps the developer runner.
 RUN cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
+      -DUOCR_WITH_SERVER=OFF \
       -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_CUDA_HOST_COMPILER=g++-14 \
       -DCMAKE_CUDA_ARCHITECTURES=87 \
  && cmake --build /build \

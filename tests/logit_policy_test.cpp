@@ -41,5 +41,17 @@ int main() {
     std::vector<float> l6(8, 0.0f);
     l6[4] = 9.0f;
     require(ban.choose(l6, {2, 3, 4, 7, 7, 7, 7, 7, 7, 7, 7, 2, 3}).token == 4, "outside the window it is allowed");
+    ng.page_token = 5;
+    LogitPolicy page_ban(ng);
+    std::vector<float> repeated_page(8, 0.0f);
+    repeated_page[4] = 9.0f;
+    repeated_page[6] = 8.0f;
+    require(page_ban.choose(repeated_page, {5, 2, 3, 4, 5, 2, 3}).token == 4,
+            "legitimate text repeated on another page is not suppressed");
+    std::vector<float> same_page(8, 0.0f);
+    same_page[4] = 9.0f;
+    same_page[6] = 8.0f;
+    require(page_ban.choose(same_page, {5, 2, 3, 4, 5, 2, 3, 4, 7, 2, 3}).token == 6,
+            "repetition within the current page is still suppressed");
   });
 }
