@@ -7,6 +7,7 @@
 #include "service/channel.h"
 #include "service/document_session.h"
 #include "service/page_intake.h"
+#include "service/transport_watch.h"
 
 #ifndef UOCR_VERSION
 #define UOCR_VERSION "0.0.0"
@@ -57,14 +58,35 @@ UnlimitedOcrServiceImpl::UnlimitedOcrServiceImpl(const Config& config, Engine& e
 
 grpc::Status UnlimitedOcrServiceImpl::ParseDocument(grpc::ServerContext* context,
                                                     grpc::ServerReaderWriter<Response, Request>* stream) {
-  return ParseDocumentCore([&](Request* r) { return stream->Read(r); },
-                           [&](const Response& e) { return stream->Write(e); },
-                           [&] { return context->IsCancelled(); });
+  auto slot = document_slots_.try_acquire(1);
+  if (!slot) return {grpc::StatusCode::RESOURCE_EXHAUSTED, "the server document admission budget is full"};
+  TransportWatch watch(std::chrono::milliseconds(config_.transport_idle_ms), [&] { context->TryCancel(); });
+  return ParseDocumentCore([&](Request* r) {
+                             watch.reading(true);
+                             const bool ok = stream->Read(r);
+                             watch.reading(false);
+                             return ok;
+                           }, [&](const Response& e) {
+                             watch.writing(true);
+                             const bool ok = stream->Write(e);
+                             watch.writing(false);
+                             return ok;
+                           }, [&] { return context->IsCancelled(); }, &slot,
+                           [&] { watch.stop(); }, [&](bool active) { watch.decoding(active); });
 }
 
 grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool(Request*)>& read,
                                                         const std::function<bool(const Response&)>& write,
-                                                        const std::function<bool()>& cancelled) {
+                                                        const std::function<bool()>& cancelled,
+                                                        Lease* admitted_slot,
+                                                        const std::function<void()>& stop_transport,
+                                                        const std::function<void(bool)>& decoding) {
+  Lease document_slot;
+  if (admitted_slot == nullptr) {
+    document_slot = document_slots_.try_acquire(1);
+    admitted_slot = &document_slot;
+  }
+  if (!*admitted_slot) return {grpc::StatusCode::RESOURCE_EXHAUSTED, "the server document admission budget is full"};
   Request request;
   if (!read(&request) || !request.has_options()) return invalid("the first message must be ParseOptions");
   SessionOptions options;
@@ -80,6 +102,7 @@ grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool
     halt = true;
     intake.halt();
     events.close();
+    if (stop_transport) stop_transport();
   };
 
   std::thread writer([&] {
@@ -103,10 +126,7 @@ grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool
   SessionEnd end = SessionEnd::kStopped;
   // Keep the slot until both decode and transport finish. Otherwise slow
   // readers can each retain a full output queue after freeing a decode slot.
-  Lease document_slot;
   std::thread session_thread([&] {
-    document_slot = document_slots_.acquire(1, halted);
-    if (!document_slot) return;
     DocumentSession session(engine_, engine_mutex_, options, intake,
                             [&](Response event) {
                               try {
@@ -115,23 +135,30 @@ grpc::Status UnlimitedOcrServiceImpl::ParseDocumentCore(const std::function<bool
                                 output_exhausted = true;
                                 stop();
                               }
-                            }, halted);
+                            }, halted, decoding);
     end = session.run();
     if (end != SessionEnd::kComplete) stop();
   });
 
   grpc::Status status = grpc::Status::OK;
-  while (!halted() && read(&request)) {
+  std::uint32_t admitted_pages = 0;
+  // The declared count is the input boundary. Do not require clients to
+  // half-close after all pages, or let a trailing Read delay completion.
+  while (admitted_pages < options.page_count && !halted() && read(&request)) {
     if (request.has_options()) {
       status = invalid("ParseOptions must not repeat on the stream");
       break;
     }
-    if (!request.has_page()) continue;
+    if (!request.has_page()) {
+      status = invalid("a request payload is required");
+      break;
+    }
     std::optional<grpc::Status> refused = admit_page(*request.mutable_page(), intake, options, halted);
     if (refused.has_value()) {
       status = *refused;
       break;
     }
+    ++admitted_pages;
   }
   intake.end_of_input();
   if (!status.ok()) stop();

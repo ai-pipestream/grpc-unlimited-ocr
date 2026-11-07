@@ -117,6 +117,7 @@ void grpc_cancellation() {
 
 void global_retry() {
   service::Config config;
+  config.documents_in_flight = 2;
   config.page_window = 1;
   config.max_buffered_bytes = 15;
   FakeEngine engine;
@@ -190,13 +191,15 @@ void slow_reader_slots() {
   }
   const bool decoded = engine.decodes == 1 && engine.concurrent == 0;
   auto second = std::async(std::launch::async, [&] { return run(service, document(options_request(1))); });
-  const bool blocked = second.wait_for(200ms) == std::future_status::timeout;
+  const bool refused_promptly = second.wait_for(200ms) == std::future_status::ready;
   const bool slot_held = service.document_slots().in_use() == 1 && engine.decodes == 1;
   release_writer = true;
   const auto first_status = first.get();
   const auto second_out = second.get();
-  require(decoded && blocked && slot_held, "completed decode retains its slot while responses wait for a reader");
-  require(first_status.ok() && second_out.status.ok(), "both streams finish after reader resumes");
+  require(decoded && refused_promptly && slot_held, "completed decode retains admission while responses wait for a reader");
+  require(first_status.ok() && second_out.status.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED,
+          "another stream is refused while the first drains");
+  require(run(service, document(options_request(1))).status.ok(), "retry succeeds after writer completion");
   require(service.document_slots().in_use() == 0, "slots released after RPC completion");
 }
 

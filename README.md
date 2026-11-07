@@ -101,13 +101,30 @@ configured document concurrency. One additional response per active document
 may be in the transport, and the model,
 current page tokens, and optional folded Document have separate memory
 costs. An individual response larger than the queue cap fails the RPC with
-`RESOURCE_EXHAUSTED`. Cancellation releases blocked producers and leases.
+`RESOURCE_EXHAUSTED` when no transport cancellation is needed.
+
+RPC admission is fail-fast before the initial read and worker creation.
+The slot remains reserved through worker and watchdog shutdown. Clients
+need not half-close after sending the declared number of pages; extra
+messages after that boundary are not consumed.
+
+`GRPC_UOCR_TRANSPORT_IDLE_MS` defaults to 30000. It limits blocked reads and
+writes, not total request duration. Input-idle timing pauses during native
+inference, including prefill; write-stall timing is independent. Internal
+failure allows queued events 200 ms of stalled-operation grace before
+interrupting a blocked transport operation with `TryCancel`. On the wire,
+that operation returns `CANCELLED`, even if the handler has a more specific
+failure status. Existing typed `PageFailure` events and partial results are
+delivered when possible, but cannot be guaranteed to an unreadable client.
+Cancellation releases blocked producers; native encode/prefill remains
+non-preemptible, so compute leases can remain until that call returns.
 
 The reference backend computes and reports `fp32`. With
 `GRPC_UOCR_BACKEND=reference`, leave `GRPC_UOCR_WEIGHT_FORMAT` unset or use
 `fp32`; other values are refused. CUDA supports `bf16` and `int8`.
 
 The opt-in `server_model_stream_test` exercises real weights over gRPC with
-one page, two pages, delayed reads, and cancellation. It skips without
+one page, two pages, known fixture text and geometry, delayed reads, and
+cancellation. It skips without
 `UOCR_MODELS_DIR`; run it on an available device, not beside busy GPU jobs.
 The scripted transport tests and queue tests do not prove model inference.

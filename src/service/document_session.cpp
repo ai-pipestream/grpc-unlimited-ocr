@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <thread>
 #include <utility>
 
 #include "output/document_fold.h"
@@ -77,13 +78,14 @@ struct DocumentSession::Window {
 };
 
 DocumentSession::DocumentSession(Engine& engine, std::mutex& engine_mutex, const SessionOptions& options,
-                                 PageIntake& intake, Emit emit, std::function<bool()> halted)
+                                 PageIntake& intake, Emit emit, std::function<bool()> halted,
+                                 std::function<void(bool)> decoding)
     : engine_(engine),
       engine_mutex_(engine_mutex),
       options_(options),
       intake_(intake),
       emit_(std::move(emit)),
-      halted_(std::move(halted)) {}
+      halted_(std::move(halted)), decoding_(std::move(decoding)) {}
 
 DocumentSession::~DocumentSession() = default;
 
@@ -119,8 +121,13 @@ void DocumentSession::run_window(std::uint32_t index, std::vector<IntakePage> pa
     for (const IntakePage& page : window.pages) emit_failed_raster(page);
     return;
   }
-  std::lock_guard engine_lock(engine_mutex_);
-  decode_window(window);
+  if (decoding_) decoding_(true);
+  {
+    std::unique_lock engine_lock(engine_mutex_, std::defer_lock);
+    while (!halted_() && !engine_lock.try_lock()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (engine_lock.owns_lock() && !halted_()) decode_window(window);
+  }
+  if (decoding_) decoding_(false);
 }
 
 void DocumentSession::decode_window(Window& window) {

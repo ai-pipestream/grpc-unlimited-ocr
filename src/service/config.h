@@ -40,7 +40,11 @@ struct Config {
   // so gRPC flow control holds the client back.
   std::size_t max_stream_buffered_bytes = 4 * (32ULL * 1024 * 1024);
   std::size_t max_buffered_bytes = 16 * (32ULL * 1024 * 1024);
-  // Documents decoding or draining responses; further streams wait for a slot.
+  // Timeout for blocked transport operations, excluding read time while
+  // native inference is active. Never a total inference deadline.
+  std::uint32_t transport_idle_ms = 30000;
+  // Admitted RPCs, including clients that have not sent options yet.
+  // Further streams fail immediately without creating worker threads.
   std::uint32_t documents_in_flight = 1;
 };
 

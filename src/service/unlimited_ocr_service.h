@@ -1,11 +1,13 @@
 #pragma once
 
-// The synchronous gRPC service. Each ParseDocument stream runs three
+// The synchronous gRPC service. Each admitted ParseDocument stream runs
 // threads: the RPC thread reads pages into the stream's intake (stopping
 // when the stream's byte budget is full, so gRPC flow control holds the
 // client back), a session thread decodes windows as they complete, and a
-// writer thread drains events onto the wire. The output queue has a byte
-// cap; a slow reader blocks decoding, and cancellation wakes producers.
+// writer thread drains events onto the wire. A fourth thread watches
+// blocked transport operations. Admission is fail-fast before initial Read
+// and worker creation. The output queue has a byte cap; a slow reader
+// blocks decoding, and cancellation wakes producers.
 
 #include <atomic>
 #include <functional>
@@ -33,7 +35,9 @@ class UnlimitedOcrServiceImpl final : public ::ai::pipestream::unlimitedocr::v1:
   // client is gone), `cancelled` mirrors ServerContext::IsCancelled.
   grpc::Status ParseDocumentCore(const std::function<bool(Request*)>& read,
                                  const std::function<bool(const Response&)>& write,
-                                 const std::function<bool()>& cancelled);
+                                 const std::function<bool()>& cancelled,
+                                 Lease* admitted_slot = nullptr, const std::function<void()>& stop_transport = {},
+                                 const std::function<void(bool)>& decoding = {});
 
   grpc::Status ParseDocument(grpc::ServerContext* context,
                              grpc::ServerReaderWriter<Response, Request>* stream) override;

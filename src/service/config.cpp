@@ -71,6 +71,7 @@ Config load_config_from_env() {
   c.max_buffered_bytes = configured_number("GRPC_UOCR_MAX_BUFFERED_BYTES", 16 * c.max_page_bytes,
                                            c.max_stream_buffered_bytes, 256 * kGiB);
   c.documents_in_flight = configured_u32("GRPC_UOCR_DOCUMENTS_IN_FLIGHT", c.documents_in_flight, 1, 64);
+  c.transport_idle_ms = configured_u32("GRPC_UOCR_TRANSPORT_IDLE_MS", c.transport_idle_ms, 50, 3600000);
   return c;
 }
 

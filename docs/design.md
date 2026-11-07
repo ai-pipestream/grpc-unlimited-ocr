@@ -952,3 +952,13 @@ on cancellation. These are admission and queue bounds, not a promise that
 the entire process fits inside the raster budget: model tensors, page
 traces, and the requested folded Document remain separate allocations.
 Reference precision is explicitly fp32; unsupported quantization is refused.
+
+Transport admission now reserves a document slot before the first read or
+worker creation. Excess RPCs fail promptly. Reads stop after the declared
+page count, without requiring half-close. A per-admitted-RPC watchdog times
+blocked transport operations; input timing pauses during native inference,
+while stalled writes have an independent limit. Internal failure interrupts
+blocked reads/writes after a short drain grace. TryCancel yields CANCELLED
+on the wire; typed PageFailure events are best-effort before that point.
+There is no total inference deadline, and native encode/prefill is still
+non-preemptible. The transport watchdog does not bound native compute time.

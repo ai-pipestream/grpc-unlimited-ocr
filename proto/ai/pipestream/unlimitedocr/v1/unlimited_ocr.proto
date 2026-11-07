@@ -20,7 +20,8 @@ service UnlimitedOcrService {
   // Parses one document.
   //
   // The client sends ParseOptions first, then one PageImage per page (any
-  // order, keyed by page_no), then half-closes. The server streams events
+  // order, keyed by page_no). Half-close is optional after page_count pages;
+  // input after that boundary is not consumed. The server streams events
   // as the decoder produces them: WindowStarted when a page window starts
   // decoding, Block as each block closes, PageTokens and PageDocument as
   // each page closes (pages close strictly in order), ContinuationLink
@@ -30,10 +31,13 @@ service UnlimitedOcrService {
   // Errors: a missing or repeated ParseOptions, a page_count of zero, a
   // page_no outside 1..page_count or sent twice, or fewer pages than
   // page_count at half-close is INVALID_ARGUMENT; more pages or bytes than
-  // the server's caps is RESOURCE_EXHAUSTED. A stream waits for a free
-  // document slot before its first window decodes.
-  // With abort_on_error, the first PageFailure ends the stream with
-  // ABORTED after the failure is sent.
+  // the server's caps is RESOURCE_EXHAUSTED. Admission is fail-fast before
+  // the first read; excess streams do not wait for document slots.
+  // With abort_on_error, the first PageFailure ends the stream. The status
+  // is ABORTED unless a blocked transport operation requires TryCancel,
+  // which sends CANCELLED. The failure event is delivered when possible.
+  // Idle reads and stalled writes are cancelled by the server. Read idle
+  // timing pauses during native inference; there is no total decode timer.
   rpc ParseDocument(stream ParseDocumentRequest) returns (stream ParseDocumentResponse);
   // Build, model and capability facts for this server process.
   rpc GetServiceInfo(GetServiceInfoRequest) returns (GetServiceInfoResponse);

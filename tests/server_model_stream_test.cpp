@@ -56,7 +56,8 @@ int main(int argc, char** argv) {
       for (int page = 1; page <= pages; ++page) {
         require(stream->Write(page_request(static_cast<std::uint32_t>(page), png)), "raster sent");
       }
-      stream->WritesDone();
+      // Leave input open: all declared pages are sent, so long native
+      // inference must not depend on client half-close or an idle timer.
       v1::ParseDocumentResponse event;
       int token_pages = 0;
       int fragments = 0;
@@ -96,7 +97,7 @@ int main(int argc, char** argv) {
     context.set_deadline(std::chrono::system_clock::now() + 20min);
     auto stream = stub->ParseDocument(&context);
     require(stream->Write(options_request(1)) && stream->Write(page_request(1, png)), "cancel request sent");
-    stream->WritesDone();
+    // Cancellation must also work without a client half-close.
     v1::ParseDocumentResponse event;
     require(stream->Read(&event) && event.has_window_started(), "real prefill completed");
     context.TryCancel();

@@ -163,7 +163,7 @@ No wire changes were needed for this receipt.
 The content check caught an error missed by transport-only checks: page 2's
 final caption was an image_c block without coordinates. Actual before/after
 model output is in docs/receipts/repeated-page-before.txt and
- docs/receipts/repeated-page-after.txt.
+docs/receipts/repeated-page-after.txt.
 
 N-gram suppression crossed page boundaries and changed valid repeated
 content. Commit ead223c adds the failing unit regression and text/geometry
@@ -185,3 +185,85 @@ server and project-test rebuild. Logs:
 0 failed, and 6 model-dependent tests skipped (34 registered). Corrupted
 text/geometry rejection tests passed. Actual inference used the separate
 optimized reference build with installed gRPC 1.51.1.
+
+## Transport termination and admission
+
+The final transport changes were reproduced against the previous service
+core: initial idle input, fail-fast admission, decode failure without client
+half-close, and successful completion without half-close all failed (4/4).
+A separate regression failed when a cancelled session waited for the engine
+mutex while another session decoded. Logs: /tmp/uocr-transport-red-tests.log
+and /tmp/uocr-queued-cancel-red.log.
+
+The final pinned gRPC 1.83.0 server and project targets build with GCC 15.3
+and WERROR. CTest reports 37 passed, 0 failed, 6 model-dependent skips,
+43 registered. Logs: /tmp/uocr-final-head-pinned-build.log and
+/tmp/uocr-final-head-pinned-tests.log. The installed-gRPC build also passes
+all 21 targeted service/config/resource/transport tests, including nine real
+TCP transport tests (/tmp/uocr-transport-final-system-tests.log).
+
+The TCP cases cover idle initial input, missing pages, admission refusal,
+decode failure, stalled output, long decode, no half-close, resource failure,
+and cancellation during engine mutex contention. Recovery checks confirm
+leases return and subsequent requests succeed. Long fake-engine decode
+exceeds the configured input idle interval without cancellation.
+
+Admission precedes initial Read and application thread creation; the slot
+lasts through transport-watch shutdown. Declared page_count terminates input
+collection without half-close. Input inactivity is suspended during decode;
+output inactivity is independent. Forced transport shutdown uses TryCancel,
+so clients can receive CANCELLED even when an internal failure caused it.
+Typed failure events and partial results are delivered when transport permits,
+not guaranteed after cancellation. Native vision/prefill remains non-preemptible;
+this is not a whole-process memory bound or a hard compute deadline.
+
+Buf lint, format and breaking checks against the original 809e1b1 proto tree
+pass. The canonical document.proto remains byte-identical to the approved
+gRParse copy. Final code is pushed with no CI skip marker; earlier successful
+CI at 84b0ef5 does not substitute for final-head coverage.
+
+An earlier installed-gRPC CUDA-tree test run overlapped executable relinking:
+three transport cases could not launch (permission denied / BAD_COMMAND).
+The original /tmp/uocr-final-transport-cuda-tests.log is preserved. With no
+build or CTest process using that tree, a sequential transport_test build
+followed by only those three cases passes: no_halfclose, resource and
+queued_cancel. Logs: /tmp/uocr-cuda-transport-recheck-build.log and
+/tmp/uocr-cuda-transport-recheck-tests.log. CMakeCache confirms
+UOCR_WITH_CUDA=ON and /usr/bin/nvcc in build-system; its source path is this
+worktree. These tests use a fake engine and provide no CUDA inference proof.
+Afterward, a sequential build of the server and all targeted test executables
+followed by the complete 21-case service/config/transport/resource suite
+passes against the stable CUDA-enabled tree (3.58 seconds). Logs:
+/tmp/uocr-cuda-stable-build.log and /tmp/uocr-cuda-stable-tests.log. No build
+ran in that tree during the suite.
+
+The final intake review found that unset request payloads were ignored,
+allowing empty frames to renew input activity without supplying a page.
+A direct regression failed with `empty payload is not a heartbeat`
+(/tmp/uocr-empty-frame-red.log). The service now returns INVALID_ARGUMENT
+immediately; the test also checks no further Read, no decode, and released
+leases. After this small guard change, the stable CUDA-enabled tree again
+passes all 21 targeted cases (/tmp/uocr-empty-frame-cuda-tests.log).
+The pinned 1.83 server and affected test targets were rebuilt after the guard;
+the full project suite remains 37 passed, 0 failed and 6 skipped (43 registered).
+Logs: /tmp/uocr-empty-frame-pinned-build.log and
+/tmp/uocr-empty-frame-pinned-tests.log.
+
+## Final real-model transport receipt
+
+The optimized reference/fp32 RPC test completed with exit 0 in approximately
+9 minutes on the shared host. One-page and repeated two-page requests passed
+all four text anchors and geometry checks without client half-close, using
+GRPC_UOCR_TRANSPORT_IDLE_MS=150. Cancellation after native prefill also passed,
+with leases returned. Actual output is committed in
+docs/receipts/final-transport-reference.txt; the process receipt is
+/tmp/uocr-landing-result.log. This run used two CPU threads, nice 10, the same
+verified model and fixture above, and installed gRPC 1.51.1, not pinned 1.83.
+
+This binary contains the final transport implementation and page-scoped
+repetition fix. While it ran, the only later production change was rejecting
+empty request payloads; that guard is covered by the red/green direct
+regression and final pinned/CUDA-tree tests above. The real run sends valid
+options/pages and does not qualify malformed-input behavior. No additional
+model run was needed for the guard. Qualification remains one fixture and
+its repeated-page case, with no CUDA inference or broader document claim.

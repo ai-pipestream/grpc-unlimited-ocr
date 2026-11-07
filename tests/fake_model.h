@@ -103,6 +103,8 @@ class FakeEngine final : public service::Engine {
  public:
   std::vector<WindowScript> windows;  // consumed in order, one per decode call
   std::chrono::microseconds step_delay{0};
+  std::chrono::milliseconds prefill_delay{0};
+  int token_run = 4;
   std::atomic<int> decodes{0};
   std::atomic<int> concurrent{0};
   std::atomic<int> max_concurrent{0};
@@ -141,9 +143,10 @@ class FakeEngine final : public service::Engine {
       window_sizes.push_back(request.pages.size());
       script = windows.at(static_cast<std::size_t>(decodes++));
     }
+    if (prefill_delay.count() > 0) std::this_thread::sleep_for(prefill_delay);
     started(100 * request.pages.size());
     std::vector<std::uint32_t> ids;
-    for (const std::string& p : tokenize(script.output, 7)) ids.push_back(vocab.id(p));
+    for (const std::string& p : tokenize(script.output, 7, token_run)) ids.push_back(vocab.id(p));
     if (script.eos) ids.push_back(kEosToken);
     for (std::size_t i = 0; i < ids.size(); ++i) {
       if (static_cast<int>(i) == script.throw_after) throw std::runtime_error("scripted engine failure");

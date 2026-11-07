@@ -13,6 +13,12 @@ int main() {
     require(defaults.listen_address == "0.0.0.0:50073", "default listen address");
     require(defaults.page_window == 10 && defaults.ngram_size == 35, "upstream defaults");
     require(defaults.documents_in_flight == 1, "one document at a time by default");
+    require(defaults.transport_idle_ms == 30000, "transport idle default");
+    ::setenv("GRPC_UOCR_TRANSPORT_IDLE_MS", "150", 1);
+    require(load_config_from_env().transport_idle_ms == 150, "transport idle override");
+    ::setenv("GRPC_UOCR_TRANSPORT_IDLE_MS", "0", 1);
+    require_throws([] { load_config_from_env(); }, "transport idle cannot disable the bound");
+    ::unsetenv("GRPC_UOCR_TRANSPORT_IDLE_MS");
 
     ::setenv("GRPC_UOCR_BACKEND", "reference", 1);
     ::setenv("GRPC_UOCR_PAGE_WINDOW", "4", 1);

@@ -99,6 +99,27 @@ void back_pressure() {
   require(service.buffered_bytes().in_use() == 0, "every byte is given back");
 }
 
+void empty_payload() {
+  service::Config config;
+  FakeEngine engine;
+  engine.windows = pages_script(1, 1);
+  service::UnlimitedOcrServiceImpl service(config, engine);
+  int reads = 0;
+  const auto status = service.ParseDocumentCore([&](v1::ParseDocumentRequest* request) {
+    ++reads;
+    if (reads == 1) *request = options_request(1);
+    else if (reads == 2) request->Clear();
+    else if (reads == 3) *request = page_request(1);
+    else return false;
+    return true;
+  }, [](const v1::ParseDocumentResponse&) { return true; }, [] { return false; });
+  require(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT,
+          "empty payload is not a heartbeat");
+  require(reads == 2 && engine.decodes == 0, "reject empty payload before reading another frame");
+  require(service.document_slots().in_use() == 0 && service.buffered_bytes().in_use() == 0,
+          "empty payload releases admission");
+}
+
 void cancellation() {
   service::Config config;
   FakeEngine engine;
@@ -162,11 +183,16 @@ void one_document_at_a_time() {
   service::UnlimitedOcrServiceImpl service(config, engine);
   std::vector<std::thread> clients;
   std::atomic<int> ok{0};
+  std::atomic<int> refused{0};
   for (int i = 0; i < 4; ++i) {
-    clients.emplace_back([&] { ok += run(service, document(options_request(1))).status.ok() ? 1 : 0; });
+    clients.emplace_back([&] {
+      const auto status = run(service, document(options_request(1))).status;
+      ok += status.ok() ? 1 : 0;
+      refused += status.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED ? 1 : 0;
+    });
   }
   for (auto& c : clients) c.join();
-  require(ok == 4, "four streams complete");
+  require(ok >= 1 && ok + refused == 4, "streams complete or fail admission promptly");
   require(engine.max_concurrent == 1, "one document decodes at a time");
 }
 
@@ -205,6 +231,7 @@ int main() {
   return run_tests([] {
     ordering();
     caps_and_invalid_input();
+    empty_payload();
     back_pressure();
     cancellation();
     failure_codes();

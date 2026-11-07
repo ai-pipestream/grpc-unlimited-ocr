@@ -55,7 +55,7 @@ class DocumentSession {
 
   // `engine_mutex` serialises windows of every stream on the one engine.
   DocumentSession(Engine& engine, std::mutex& engine_mutex, const SessionOptions& options, PageIntake& intake,
-                  Emit emit, std::function<bool()> halted);
+                  Emit emit, std::function<bool()> halted, std::function<void(bool)> decoding = {});
   ~DocumentSession();
 
   SessionEnd run();
@@ -81,6 +81,7 @@ class DocumentSession {
   PageIntake& intake_;
   Emit emit_;
   std::function<bool()> halted_;
+  std::function<void(bool)> decoding_;
 
   output::ContinuationTracker tracker_;
   std::vector<v1::Block> blocks_;  // every block, for the folded Document
