@@ -22,7 +22,16 @@ void LogitPolicy::ban_repeats(std::vector<float>& logits, const std::vector<std:
   const std::int64_t size = config_.ngram_size;
   if (size <= 0 || n < size) return;
   const std::span<const std::int64_t> prefix(generated.data() + n - (size - 1), static_cast<std::size_t>(size - 1));
-  const std::int64_t start = std::max<std::int64_t>(0, n - config_.ngram_window);
+  std::int64_t start = std::max<std::int64_t>(0, n - config_.ngram_window);
+  // Identical headers, captions and even whole pages are legitimate input.
+  // Only suppress loops within the current page, never a previous page.
+  for (std::int64_t i = n; i > start; --i) {
+    if (generated[static_cast<std::size_t>(i - 1)] == config_.page_token) {
+      start = i;
+      break;
+    }
+  }
+  if (n - start < size) return;
   for (std::int64_t i = start; i <= n - size; ++i) {
     if (std::ranges::equal(std::span(generated.data() + i, static_cast<std::size_t>(size - 1)), prefix)) {
       const std::int64_t banned = generated[static_cast<std::size_t>(i + size - 1)];

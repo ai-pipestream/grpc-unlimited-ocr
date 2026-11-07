@@ -157,3 +157,31 @@ The service does not verify mounted file hashes during startup; architecture
 checks do not substitute for that verification. The successful file checks
 above are separate evidence and must not be inferred from this RPC field.
 No wire changes were needed for this receipt.
+
+## Content and geometry qualification
+
+The content check caught an error missed by transport-only checks: page 2's
+final caption was an image_c block without coordinates. Actual before/after
+model output is in docs/receipts/repeated-page-before.txt and
+ docs/receipts/repeated-page-after.txt.
+
+N-gram suppression crossed page boundaries and changed valid repeated
+content. Commit ead223c adds the failing unit regression and text/geometry
+checks. The fix confines suppression to the current page, retaining loop
+protection within that page. Logs: /tmp/uocr-page-repeat-red.log and
+/tmp/uocr-page-repeat-green.log.
+
+Real reference/fp32 one-page and two-page RPC inference now passes all 4
+text anchors per page, positive-area raw and normalized boxes inside
+0..1000, expected vertical placement, completion, and cancellation after
+prefill. The process exited 0. This qualifies one known raster and the
+repeated-page case only, not other documents or hardware/precision modes.
+Exact token equality is not required.
+
+The canonical schema was regenerated with pinned gRPC 1.83, followed by a
+server and project-test rebuild. Logs:
+/tmp/uocr-final-canonical-regenerated-build.log and
+/tmp/uocr-content-fixed-pinned-build.log. At this milestone, 28 tests passed,
+0 failed, and 6 model-dependent tests skipped (34 registered). Corrupted
+text/geometry rejection tests passed. Actual inference used the separate
+optimized reference build with installed gRPC 1.51.1.

@@ -1,7 +1,7 @@
 #pragma once
 
 // What happens to the logits between the model and the chosen token:
-// an optional no-repeat n-gram ban over a sliding window of the output,
+// an optional no-repeat n-gram ban over a sliding window of the current page,
 // and the page-count guard that makes the output carry exactly one <PAGE>
 // per input page (EOS banned until then, forced after; a page that runs
 // past its token cap is closed). Then greedy argmax.
