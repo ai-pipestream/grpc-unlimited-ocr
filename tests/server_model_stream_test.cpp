@@ -4,6 +4,7 @@
 #include <chrono>
 #include <thread>
 #include "check.h"
+#include "fixture_content.h"
 #include "backend/reference/parallel.h"
 #include "output_helpers.h"
 #include "service/model_engine.h"
@@ -14,6 +15,7 @@ using namespace uocr::testing;
 using namespace std::chrono_literals;
 
 int main(int argc, char** argv) {
+  if (argc == 2 && std::string(argv[1]) == "--check-fixture-assertions") return run_tests(check_fixture_assertions);
   const char* models = env_or_null("UOCR_MODELS_DIR");
   if (models == nullptr) return skip("UOCR_MODELS_DIR is not set");
   return run_tests([&] {
@@ -59,11 +61,21 @@ int main(int argc, char** argv) {
       int token_pages = 0;
       int fragments = 0;
       bool complete = false;
+      std::vector<std::vector<v1::Block>> blocks(static_cast<std::size_t>(pages + 1));
       while (stream->Read(&event)) {
         if (event.has_page_failure()) throw std::runtime_error(event.page_failure().detail());
         if (event.has_tokens()) {
           ++token_pages;
           require(event.tokens().steps_size() > 0, "real decode produced tokens");
+          std::println("raw page={}: {}", event.tokens().page_no(), event.tokens().text());
+        }
+        if (event.has_block()) {
+          const auto& block = event.block();
+          require(block.page_no() >= 1 && block.page_no() <= static_cast<unsigned>(pages), "block page is in request");
+          blocks[block.page_no()].push_back(block);
+          const auto& box = block.box();
+          std::println("page={} kind={} box=[{},{},{},{}] text={}", block.page_no(), block.label_text(),
+                       box.x1(), box.y1(), box.x2(), box.y2(), block.has_text() ? block.text().text() : "");
         }
         fragments += event.has_page_document() ? 1 : 0;
         if (event.has_complete()) {
@@ -75,6 +87,9 @@ int main(int argc, char** argv) {
       }
       require(stream->Finish().ok() && complete && token_pages == pages && fragments == pages,
               "complete real-model page stream");
+      for (int page = 1; page <= pages; ++page) {
+        check_fixture_content(blocks[static_cast<std::size_t>(page)], static_cast<std::uint32_t>(page));
+      }
       std::println("{}: {} page(s), tokens and fragments complete", engine->info().backend, pages);
     }
     grpc::ClientContext context;
