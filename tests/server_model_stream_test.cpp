@@ -4,6 +4,7 @@
 #include <chrono>
 #include <thread>
 #include "check.h"
+#include "backend/reference/parallel.h"
 #include "output_helpers.h"
 #include "service/model_engine.h"
 #include "service_helpers.h"
@@ -16,6 +17,8 @@ int main(int argc, char** argv) {
   const char* models = env_or_null("UOCR_MODELS_DIR");
   if (models == nullptr) return skip("UOCR_MODELS_DIR is not set");
   return run_tests([&] {
+    // Keep this optional real-model test from consuming every host CPU.
+    reference::set_thread_count(2);
     ::setenv("GRPC_UOCR_MODELS_DIR", models, 1);
 #if !UOCR_WITH_CUDA
     ::setenv("GRPC_UOCR_BACKEND", "reference", 0);
@@ -43,6 +46,7 @@ int main(int argc, char** argv) {
     }
     const auto png = read_text(std::string(UOCR_GOLDENS) + "/quickstart-p2/page.png");
     for (const int pages : {1, 2}) {
+      std::println("starting {} page(s): backend={}, precision={}", pages, info.backend(), info.weight_format());
       grpc::ClientContext context;
       context.set_deadline(std::chrono::system_clock::now() + 20min);
       auto stream = stub->ParseDocument(&context);
