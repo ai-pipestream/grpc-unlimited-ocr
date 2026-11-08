@@ -1,0 +1,65 @@
+2026-11-08 17:02:08.019 server_model_stream_test[49874:6846870] Metal API Validation Enabled
+starting 1 page(s): backend=metal, precision=bf16
+page=1 kind=title box=[90,67,824,99] text=Scanned page: OCR, figures, barcode
+page=1 kind=text box=[88,121,699,167] text=This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+page=1 kind=chart box=[292,222,730,461] text=
+page=1 kind=image_caption box=[215,515,814,537] text=Figure 1: quarterly volume, classified by the figure model.
+page=1 kind=image box=[379,603,620,792] text=
+page=1 kind=image_caption box=[151,836,820,882] text=Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+raw page=1: <PAGE><BLOCK>title[90, 67, 824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.<｜end▁of▁sentence｜>
+hardware RPC backend=metal pages=1 seconds=26.377061: content, boxes, tokens and fragments PASS
+real-model TCP cancellation/recovery cycle 0 PASS
+starting 1 page(s): backend=metal, precision=bf16
+page=1 kind=title box=[90,67,824,99] text=Scanned page: OCR, figures, barcode
+page=1 kind=text box=[88,121,699,167] text=This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+page=1 kind=chart box=[292,222,730,461] text=
+page=1 kind=image_caption box=[215,515,814,537] text=Figure 1: quarterly volume, classified by the figure model.
+page=1 kind=image box=[379,603,620,792] text=
+page=1 kind=image_caption box=[151,836,820,882] text=Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+raw page=1: <PAGE><BLOCK>title[90, 67, 824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.<｜end▁of▁sentence｜>
+hardware RPC backend=metal pages=1 seconds=24.386298: content, boxes, tokens and fragments PASS
+real-model TCP cancellation/recovery cycle 1 PASS
+starting 1 page(s): backend=metal, precision=bf16
+page=1 kind=title box=[90,67,824,99] text=Scanned page: OCR, figures, barcode
+page=1 kind=text box=[88,121,699,167] text=This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+page=1 kind=chart box=[292,222,730,461] text=
+page=1 kind=image_caption box=[215,515,814,537] text=Figure 1: quarterly volume, classified by the figure model.
+page=1 kind=image box=[379,603,620,792] text=
+page=1 kind=image_caption box=[151,836,820,882] text=Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+raw page=1: <PAGE><BLOCK>title[90, 67, 824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.<｜end▁of▁sentence｜>
+hardware RPC backend=metal pages=1 seconds=24.352040: content, boxes, tokens and fragments PASS
+real-model TCP cancellation/recovery cycle 2 PASS
+ok
+      113.41 real         5.95 user         8.16 sys
+          8470855680  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              613951  page reclaims
+              343833  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                 151  messages sent
+                 199  messages received
+                   0  signals received
+                 136  voluntary context switches
+              182510  involuntary context switches
+        118283628022  instructions retired
+         43248142468  cycles elapsed
+          7441590544  peak memory footprint
