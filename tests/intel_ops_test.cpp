@@ -15,7 +15,7 @@ void compare(const std::vector<float>& actual, const Tensor& expected, const cha
   float worst = 0;
   for (std::size_t i = 0; i < actual.size(); ++i) {
     const float error = std::fabs(actual[i] - expected.data()[i]);
-    if (!std::isfinite(actual[i]) || error > 3e-5f * std::max(1.0f, std::fabs(expected.data()[i])))
+    if (!std::isfinite(actual[i]) || !std::isfinite(expected.data()[i]) || error > 3e-5f * std::max(1.0f, std::fabs(expected.data()[i])))
       throw std::runtime_error(std::string(name) + " parity failed at " + std::to_string(i));
     worst = std::max(worst, error);
   }
@@ -71,7 +71,7 @@ int main() {
   try {
     std::cout << "device=" << context->device_name() << " driver=" << context->driver_version() << '\n';
     run(*context);
-    std::cout << "PASS native Intel primitive parity; model/RPC not implemented\n";
+    std::cout << "PASS initial Intel primitive parity; full model has separate qualification gates\n";
     return 0;
   } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

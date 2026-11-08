@@ -5,8 +5,10 @@ typed layout blocks and per-page `ai.pipestream.document.v1.Document`
 fragments back to the caller. The model runs on a native engine in this
 repo: weights load directly from the upstream safetensors, the forward
 pass is C++. Implemented backends are the fp32 CPU reference and CUDA
-(bf16 and int8). Intel SYCL/oneDNN, Apple Metal, Hailo offload and int4
-remain planned, not selectable working backends. There is no inference runtime and no
+(bf16 and int8). The native Intel SYCL/oneDNN bf16 model path is implemented;
+[qualification status](docs/intel-native.md) lists hardware results and open
+RPC/performance tests. Apple Metal, Hailo offload and int4 remain planned
+in this branch. There is no inference runtime and no
 Python at build or run time.
 
 **Status:** the reference engine matches the upstream implementation token
@@ -65,8 +67,8 @@ grpcurl -plaintext localhost:50073 ai.pipestream.unlimitedocr.v1.UnlimitedOcrSer
 
 Configuration is `GRPC_UOCR_*` environment variables (see
 [`src/service/config.h`](src/service/config.h)): `LISTEN_ADDRESS`
-(`0.0.0.0:50073`), `BACKEND` (`cuda`, `reference`; `intel-gpu`, `metal` and
-`cpu` once built), `DEVICE_INDEX`, `WEIGHT_FORMAT` (`bf16`, `int8`),
+(`0.0.0.0:50073`), `BACKEND` (`cuda`, `reference`, `intel-gpu` when built; `metal` and
+`cpu` remain unavailable in this branch), `DEVICE_INDEX`, `WEIGHT_FORMAT` (`bf16`, `int8`),
 `MODELS_DIR` (`/models`), `PAGE_WINDOW` (10),
 `MAX_TOKENS_PER_PAGE` (20000), `NGRAM_SIZE` (35), `NGRAM_WINDOW` (1024),
 `NGRAM_WINDOW_SINGLE_PAGE` (128), `MAX_PAGES`, `MAX_PAGE_BYTES`,

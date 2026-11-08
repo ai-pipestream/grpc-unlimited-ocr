@@ -21,6 +21,11 @@
 #include "model/cuda/cuda_vision.h"
 #endif
 
+#if UOCR_WITH_INTEL
+#include "model/intel/intel_decoder.h"
+#include "model/intel/intel_vision.h"
+#endif
+
 #ifndef UOCR_MANIFEST_SHA256
 #define UOCR_MANIFEST_SHA256 ""
 #endif
@@ -140,6 +145,16 @@ class ModelEngine final : public Engine {
       return;
     }
 #endif
+#if UOCR_WITH_INTEL
+    if (config_.backend == "intel-gpu") {
+      if (config_.weight_format != "bf16") throw std::invalid_argument("Intel native requires bf16 weights");
+      intel_ = std::make_unique<intel_native::Context>(static_cast<int>(config_.device_index), config_.device_memory_cap);
+      vision_ = std::make_unique<intel_native::IntelVisionEncoder>(*intel_, *weights_);
+      decoder_ = std::make_unique<intel_native::IntelDecoder>(*intel_, *weights_);
+      device_ = intel_->device_name();
+      return;
+    }
+#endif
     throw std::runtime_error("backend " + config_.backend + " is not built into this binary");
   }
 
@@ -149,6 +164,9 @@ class ModelEngine final : public Engine {
   std::unique_ptr<CheckpointWeights> weights_;
 #if UOCR_WITH_CUDA
   std::unique_ptr<cuda::Context> cuda_;  // declared before the models: device arrays go first
+#endif
+#if UOCR_WITH_INTEL
+  std::unique_ptr<intel_native::Context> intel_;
 #endif
   std::unique_ptr<VisionModel> vision_;
   std::unique_ptr<Decoder> reference_decoder_;

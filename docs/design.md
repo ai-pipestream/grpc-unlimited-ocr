@@ -729,8 +729,9 @@ and stop reason, so the merge keeps attribution.
   P9. Continuation chains still link across windows.
 - Every item's `CollectorSource` carries the model's mean log-probability
   over the steps behind it (`raw_score_kind` `mean_logprob`).
-- `GRPC_UOCR_DEVICE_MEMORY_CAP` is not read yet: no backend allocates from
-  a capped arena.
+- The Intel backend applies `GRPC_UOCR_DEVICE_MEMORY_CAP` to native USM
+  and explicit GEMM scratch. Other backends do not enforce this setting.
+  Driver caches and host memory are separate. See `intel-native.md`.
 
 ## 6. gRParse integration
 

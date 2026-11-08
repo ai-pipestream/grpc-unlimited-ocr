@@ -47,7 +47,8 @@ int main(int argc, char** argv) {
       return;
     }
     const auto png = read_text(std::string(UOCR_GOLDENS) + "/quickstart-p2/page.png");
-    for (const int pages : {1, 2}) {
+    for (const int pages : {1, 2, 1, 2, 1, 2}) {
+      const auto request_start = std::chrono::steady_clock::now();
       std::println("starting {} page(s): backend={}, precision={}", pages, info.backend(), info.weight_format());
       grpc::ClientContext context;
       context.set_deadline(std::chrono::system_clock::now() + 20min);
@@ -91,7 +92,9 @@ int main(int argc, char** argv) {
       for (int page = 1; page <= pages; ++page) {
         check_fixture_content(blocks[static_cast<std::size_t>(page)], static_cast<std::uint32_t>(page));
       }
-      std::println("{}: {} page(s), tokens and fragments complete", engine->info().backend, pages);
+      std::println("hardware RPC backend={} pages={} seconds={:.6f}: content, boxes, tokens and fragments PASS",
+                   engine->info().backend, pages,
+                   std::chrono::duration<double>(std::chrono::steady_clock::now() - request_start).count());
     }
     grpc::ClientContext context;
     context.set_deadline(std::chrono::system_clock::now() + 20min);
@@ -103,6 +106,16 @@ int main(int argc, char** argv) {
     context.TryCancel();
     while (stream->Read(&event)) {}
     require(stream->Finish().error_code() == grpc::StatusCode::CANCELLED, "real-model stream cancelled");
+    const auto released_by = std::chrono::steady_clock::now() + 30s;
+    while (service.document_slots().in_use() != 0 && std::chrono::steady_clock::now() < released_by)
+      std::this_thread::sleep_for(10ms);
+    require(service.document_slots().in_use() == 0, "cancel releases admission before recovery");
+    auto recovery = document(options_request(1));
+    recovery[1] = page_request(1, png);
+    const auto recovered = run(service, recovery);
+    require(recovered.status.ok(), "post-cancellation real RPC recovery");
+    check_fixture_content(recovered.blocks(), 1);
+    std::println("real-model cancellation and subsequent text/geometry recovery PASS");
     server->Shutdown(std::chrono::system_clock::now() + 10s);
     server->Wait();
     require(service.buffered_bytes().in_use() == 0 && service.document_slots().in_use() == 0,
