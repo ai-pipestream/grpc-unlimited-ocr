@@ -145,6 +145,11 @@ Array::Array(const Context& ctx, DType type, std::int64_t count) : ctx_(&ctx), c
   const auto bytes = static_cast<std::size_t>(count) * size;
   if (bytes > p.cap - p.allocated) p.finish();
   if (bytes > p.cap - p.allocated) throw std::length_error("Metal aggregate allocation exceeds cap");
+  if (p.test_allocations_before_failure == 0) {
+    p.test_allocations_before_failure = -1;
+    throw std::bad_alloc();
+  }
+  if (p.test_allocations_before_failure > 0) --p.test_allocations_before_failure;
   @autoreleasepool {
     id<MTLBuffer> buffer = [p.device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
     if (!buffer) throw std::bad_alloc();

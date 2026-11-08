@@ -22,6 +22,9 @@ struct Context::Impl {
   std::size_t cap = 0, allocated = 0, peak = 0;
   std::uint64_t kernels = 0, gemms = 0;
   unsigned pending = 0;
+  // Internal one-shot allocation fault injection for native recovery tests.
+  // Negative disables it; production code never sets this field.
+  std::int64_t test_allocations_before_failure = -1;
   std::exception_ptr failure;
   Binding binding(const void* ptr) const;
   id<MTLCommandBuffer> commands();

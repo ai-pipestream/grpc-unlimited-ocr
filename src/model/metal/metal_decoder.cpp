@@ -28,6 +28,20 @@ Array ids_on_device(const Context& ctx, const std::vector<std::int64_t>& ids) {
 
 RouterParams MetalDecoder::default_router_params() { return Decoder::default_router(); }
 
+void MetalDecoder::reset_request_state() noexcept {
+  // finish() waits before surfacing sticky execution errors. Never free
+  // cache buffers while encoded commands can still reference them.
+  try { ctx_.synchronize(); } catch (...) {}
+  cache_.clear();
+  block_min_ = Array();
+  block_max_ = Array();
+  prompt_blocks_ = 0;
+  capacity_ = 0;
+  capacity_blocks_ = 0;
+  length_ = 0;
+  one_coord_ = {};
+}
+
 MetalDecoder::MetalDecoder(const Context& ctx, const WeightSource& w, const DecoderDims& dims, RouterParams router,
                          WeightFormat format)
     : ctx_(ctx), dims_(dims), router_(router), rope_(dims.head_dim) {
