@@ -25,10 +25,12 @@ COPY . .
 # gRPC builds from source. The cache id names every ABI-sensitive input;
 # bump it when gRPC, CUDA, the base image or the toolchain moves.
 ARG TARGETARCH
+ARG BUILD_JOBS=2
 RUN --mount=type=cache,id=grpc-unlimited-ocr-cuda13.4-ubuntu26-grpc1.83.0-${TARGETARCH},target=/build \
-    cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
+    case "$BUILD_JOBS" in ''|*[!0-9]*|0) echo 'BUILD_JOBS must be positive' >&2; exit 1;; esac \
+ && cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
       "-DCMAKE_CUDA_ARCHITECTURES=${UOCR_CUDA_ARCHITECTURES}" \
- && cmake --build /build \
+ && cmake --build /build --parallel "$BUILD_JOBS" \
  && ctest --test-dir /build --output-on-failure \
  && mkdir -p /out && cp /build/uocr-run /build/grpc-unlimited-ocr-server /out/
 

@@ -7,7 +7,9 @@
 #   docker run --rm --runtime nvidia -v /path/to/unlimited-ocr-2:/models:ro \
 #     -v "$PWD/pages:/pages:ro" grpc-unlimited-ocr:jetson --weights int8 /pages/page1.png
 #
-# bf16 weights do not fit beside the OS in 8 GB; use --weights int8.
+# Experimental runner image, not a qualified gRPC server deployment.
+# INT8 reduces weight storage but does not guarantee that full-model workspace
+# fits on an 8 GB Orin. Qualify against available memory before deployment.
 
 FROM nvidia/cuda:13.2.1-devel-ubuntu24.04 AS build
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,11 +21,13 @@ WORKDIR /src
 COPY . .
 # The gRPC server is not built here yet (gRPC from source on the Orin is
 # its own change); the image keeps the developer runner.
-RUN cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
+ARG BUILD_JOBS=2
+RUN case "$BUILD_JOBS" in ''|*[!0-9]*|0) echo 'BUILD_JOBS must be positive' >&2; exit 1;; esac \
+ && cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
       -DUOCR_WITH_SERVER=OFF \
       -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_CUDA_HOST_COMPILER=g++-14 \
       -DCMAKE_CUDA_ARCHITECTURES=87 \
- && cmake --build /build \
+ && cmake --build /build --parallel "$BUILD_JOBS" \
  && ctest --test-dir /build --output-on-failure \
  && mkdir -p /out && cp /build/uocr-run /out/ \
  && mkdir -p /out/tests && cp /build/*_test /out/tests/
