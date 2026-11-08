@@ -28,6 +28,7 @@ ARG TARGETARCH
 ARG BUILD_JOBS=2
 RUN --mount=type=cache,id=grpc-unlimited-ocr-cuda13.4-ubuntu26-grpc1.83.0-${TARGETARCH},target=/build \
     case "$BUILD_JOBS" in ''|*[!0-9]*|0) echo 'BUILD_JOBS must be positive' >&2; exit 1;; esac \
+ && test "$BUILD_JOBS" -gt 0 \
  && cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
       "-DCMAKE_CUDA_ARCHITECTURES=${UOCR_CUDA_ARCHITECTURES}" \
  && cmake --build /build --parallel "$BUILD_JOBS" \

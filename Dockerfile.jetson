@@ -23,6 +23,7 @@ COPY . .
 # its own change); the image keeps the developer runner.
 ARG BUILD_JOBS=2
 RUN case "$BUILD_JOBS" in ''|*[!0-9]*|0) echo 'BUILD_JOBS must be positive' >&2; exit 1;; esac \
+ && test "$BUILD_JOBS" -gt 0 \
  && cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
       -DUOCR_WITH_SERVER=OFF \
       -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_CUDA_HOST_COMPILER=g++-14 \
