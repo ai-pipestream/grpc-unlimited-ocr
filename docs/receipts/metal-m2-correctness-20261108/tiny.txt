@@ -1,0 +1,143 @@
+UpdateCTestConfiguration  from :/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Parse Config file:/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Test project /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 2
+    Start  2: metal_context_test
+
+2: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_context_test
+2: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+2: Test timeout computed to be: 60
+2: 2026-11-08 16:59:21.037 metal_context_test[49626:6842116] Metal API Validation Enabled
+2: ok
+1/6 Test  #2: metal_context_test ...............   Passed    0.27 sec
+test 3
+    Start  3: metal_recovery_test
+
+3: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_recovery_test
+3: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+3: Test timeout computed to be: 60
+3: 2026-11-08 16:59:21.235 metal_recovery_test[49629:6842147] Metal API Validation Enabled
+3: partial cache growth injection/reset/reuse PASS
+3: real cap partial growth/reset/small reuse PASS
+3: post-reserve scratch failure/reset/reuse PASS
+3: native generation exception guard/small reuse PASS
+3: ok
+2/6 Test  #3: metal_recovery_test ..............   Passed    0.40 sec
+test 4
+    Start  4: metal_ops_test
+
+4: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_ops_test
+4: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+4: Test timeout computed to be: 60
+4: 2026-11-08 16:59:21.636 metal_ops_test[49631:6842234] Metal API Validation Enabled
+4: offset LayerNorm width=2 relative error=5.96e-08
+4: offset LayerNorm width=768 relative error=7.80e-08
+4: offset LayerNorm width=1024 relative error=7.80e-08
+4: deferred buffers and allocation cap: ok
+4: linear bf16            rel err 2.45e-07 (tol 1e-05)
+4: gemm_nt batched        rel err 4.77e-07 (tol 1e-05)
+4: gemm_nn                rel err 0.00e+00 (tol 1e-05)
+4: layer_norm             rel err 1.53e-07 (tol 1e-05)
+4: rms_norm               rel err 2.06e-07 (tol 1e-05)
+4: gelu_erf               rel err 1.43e-07 (tol 1e-06)
+4: quick_gelu             rel err 7.17e-08 (tol 1e-06)
+4: softmax_rows           rel err 3.58e-07 (tol 1e-05)
+4: conv2d via im2col      rel err 2.08e-07 (tol 1e-05)
+4: rope page2d            rel err 1.09e-06 (tol 1e-05)
+4: block_summaries        rel err 9.62e-08 (tol 1e-05)
+4: route_blocks bias      rel err 0.00e+00 (tol 1e-05)
+4: ok
+3/6 Test  #4: metal_ops_test ...................   Passed    0.18 sec
+test 5
+    Start  5: metal_vision_test
+
+5: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_vision_test
+5: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+5: Test timeout computed to be: 60
+5: 2026-11-08 16:59:21.832 metal_vision_test[49633:6842319] Metal API Validation Enabled
+5: tiny model, tiled page: relative error 3.05e-07
+5: ok
+4/6 Test  #5: metal_vision_test ................   Passed    0.24 sec
+test 6
+    Start  6: metal_decoder_test
+
+6: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_decoder_test
+6: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+6: Test timeout computed to be: 60
+6: 2026-11-08 16:59:22.066 metal_decoder_test[49635:6842600] Metal API Validation Enabled
+6: weights bf16
+6: prefill logits: relative error 6.96e-07
+6: step      7: relative error 4.04e-07
+6: step      9: relative error 3.68e-07
+6: step 128827: relative error 5.79e-07
+6: step     11: relative error 3.67e-07
+6: step    100: relative error 3.86e-07
+6: step    113: relative error 3.67e-07
+6: step    126: relative error 7.76e-07
+6: step    139: relative error 3.14e-07
+6: step    152: relative error 2.69e-07
+6: step    165: relative error 4.97e-07
+6: step    178: relative error 5.49e-07
+6: step    191: relative error 1.28e-06
+6: step    204: relative error 6.68e-07
+6: step    217: relative error 6.06e-07
+6: step    230: relative error 5.03e-07
+6: step    243: relative error 5.38e-07
+6: step    256: relative error 4.66e-07
+6: step    269: relative error 6.90e-07
+6: step    282: relative error 1.58e-06
+6: step    295: relative error 5.72e-07
+6: step    308: relative error 4.26e-07
+6: step    321: relative error 1.10e-06
+6: step    334: relative error 8.56e-07
+6: step    347: relative error 9.82e-07
+6: step    360: relative error 1.10e-06
+6: step    373: relative error 3.83e-07
+6: step    386: relative error 3.92e-07
+6: step    399: relative error 4.25e-07
+6: step    412: relative error 6.04e-07
+6: step    425: relative error 5.70e-07
+6: step    438: relative error 3.09e-07
+6: step    451: relative error 4.53e-07
+6: step    464: relative error 3.70e-07
+6: step    477: relative error 6.72e-07
+6: step    490: relative error 1.30e-05
+6: step    503: relative error 6.81e-07
+6: step    516: relative error 4.21e-07
+6: step    529: relative error 1.15e-06
+6: step    542: relative error 1.98e-06
+6: step    555: relative error 4.02e-07
+6: step    568: relative error 9.76e-07
+6: step    581: relative error 1.37e-06
+6: step    594: relative error 1.75e-06
+6: step    607: relative error 2.69e-06
+6: ok
+5/6 Test  #6: metal_decoder_test ...............   Passed    0.56 sec
+test 20
+    Start 20: generator_recovery_test
+
+20: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/generator_recovery_test
+20: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+20: Environment variables: 
+20:  UOCR_TEST_TMP=/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/test-tmp
+20: Test timeout computed to be: 1500
+20: ok
+6/6 Test #20: generator_recovery_test ..........   Passed    0.07 sec
+
+The following tests passed:
+	metal_context_test
+	metal_recovery_test
+	metal_ops_test
+	metal_vision_test
+	metal_decoder_test
+	generator_recovery_test
+
+100% tests passed out of 6
+
+Total Test time (real) =   1.74 sec

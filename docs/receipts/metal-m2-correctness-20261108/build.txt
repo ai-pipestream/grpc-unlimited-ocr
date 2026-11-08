@@ -1,0 +1,74 @@
+[ 57%] Built target uocr_weights
+[ 71%] Building OBJCXX object CMakeFiles/uocr_metal.dir/src/backend/metal/context.mm.o
+[ 71%] Building OBJCXX object CMakeFiles/uocr_metal.dir/src/backend/metal/ops.mm.o
+[ 85%] Linking CXX static library libuocr_metal.a
+[ 85%] Built target uocr_metal
+[100%] Building OBJCXX object CMakeFiles/metal_context_test.dir/tests/metal_context_test.mm.o
+[100%] Linking CXX executable metal_context_test
+[100%] Built target metal_context_test
+[ 16%] Built target uocr_weights
+[ 25%] Built target uocr_metal
+[ 29%] Building CXX object CMakeFiles/uocr_reference.dir/src/model/decoder.cpp.o
+[ 33%] Building CXX object CMakeFiles/uocr_reference.dir/src/runtime/generator.cpp.o
+[ 37%] Linking CXX static library libuocr_reference.a
+[ 83%] Built target uocr_reference
+[ 83%] Building CXX object CMakeFiles/uocr_metal_model.dir/src/model/metal/metal_decoder.cpp.o
+[ 87%] Linking CXX static library libuocr_metal_model.a
+[ 95%] Built target uocr_metal_model
+[100%] Building OBJCXX object CMakeFiles/metal_recovery_test.dir/tests/metal_recovery_test.mm.o
+[100%] Linking CXX executable metal_recovery_test
+[100%] Built target metal_recovery_test
+[ 16%] Built target uocr_weights
+[ 24%] Built target uocr_metal
+[ 80%] Built target uocr_reference
+[ 92%] Built target uocr_metal_model
+[ 96%] Building CXX object CMakeFiles/metal_ops_test.dir/tests/metal_ops_test.cpp.o
+[100%] Linking CXX executable metal_ops_test
+[100%] Built target metal_ops_test
+[ 16%] Built target uocr_weights
+[ 24%] Built target uocr_metal
+[ 80%] Built target uocr_reference
+[ 92%] Built target uocr_metal_model
+[ 96%] Linking CXX executable metal_vision_test
+[100%] Built target metal_vision_test
+[ 16%] Built target uocr_weights
+[ 24%] Built target uocr_metal
+[ 80%] Built target uocr_reference
+[ 92%] Built target uocr_metal_model
+[ 96%] Building CXX object CMakeFiles/metal_decoder_test.dir/tests/metal_decoder_test.cpp.o
+[100%] Linking CXX executable metal_decoder_test
+[100%] Built target metal_decoder_test
+[ 16%] Built target uocr_weights
+[ 25%] Built target uocr_metal
+[ 83%] Built target uocr_reference
+[ 95%] Built target uocr_metal_model
+[ 95%] Building CXX object CMakeFiles/metal_golden_test.dir/tests/metal_golden_test.cpp.o
+[100%] Linking CXX executable metal_golden_test
+[100%] Built target metal_golden_test
+[ 20%] Built target uocr_weights
+[ 90%] Built target uocr_reference
+[ 95%] Building CXX object CMakeFiles/generator_recovery_test.dir/tests/generator_recovery_test.cpp.o
+[100%] Linking CXX executable generator_recovery_test
+[100%] Built target generator_recovery_test
+[ 14%] Built target uocr_proto
+[ 28%] Built target uocr_output
+[ 38%] Built target uocr_service
+[ 47%] Built target uocr_weights
+[ 80%] Built target uocr_reference
+[ 85%] Built target uocr_metal
+[ 92%] Built target uocr_metal_model
+[ 95%] Building CXX object CMakeFiles/uocr_model_engine.dir/src/service/model_engine.cpp.o
+[ 97%] Linking CXX static library libuocr_model_engine.a
+[ 97%] Built target uocr_model_engine
+[100%] Linking CXX executable server_model_stream_test
+[100%] Built target server_model_stream_test
+[ 14%] Built target uocr_proto
+[ 28%] Built target uocr_output
+[ 38%] Built target uocr_service
+[ 47%] Built target uocr_weights
+[ 80%] Built target uocr_reference
+[ 85%] Built target uocr_metal
+[ 92%] Built target uocr_metal_model
+[ 97%] Built target uocr_model_engine
+[100%] Linking CXX executable grpc-unlimited-ocr-server
+[100%] Built target grpc-unlimited-ocr-server
