@@ -4,6 +4,7 @@
 #include <cuda_bf16.h>
 
 #include <stdexcept>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -73,6 +74,23 @@ Context::~Context() {
 }
 
 void Context::synchronize() const { check(cudaStreamSynchronize(impl_->stream), "cudaStreamSynchronize"); }
+
+void Context::require_headroom(std::uint64_t bytes) const {
+  const auto info = device_info(impl_->device);
+  if (info.free_bytes < bytes)
+    throw std::runtime_error("CUDA model has insufficient free workspace headroom");
+  cudaDeviceProp prop{};
+  check(cudaGetDeviceProperties(&prop, impl_->device), "cudaGetDeviceProperties");
+  if (!prop.integrated) return;
+  // Container cgroup v2 mounts expose the effective limit at their root.
+  // 'max' and absent files do not impose an additional known limit.
+  std::ifstream limit_file("/sys/fs/cgroup/memory.max");
+  std::ifstream current_file("/sys/fs/cgroup/memory.current");
+  std::uint64_t limit = 0, current = 0;
+  if ((limit_file >> limit) && (current_file >> current) &&
+      (current >= limit || bytes > limit - current))
+    throw std::runtime_error("CUDA integrated GPU container has insufficient shared-memory workspace headroom");
+}
 
 struct Graph::Impl {
   cudaGraph_t graph = nullptr;
