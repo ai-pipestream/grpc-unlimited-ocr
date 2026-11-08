@@ -41,8 +41,8 @@ int main() {
     ReferenceDecoder decoder(model);
     const auto tokenizer = Tokenizer::load(std::filesystem::path(models) / "tokenizer.json");
     GenerationConfig config;
-    config.max_new_tokens = 1200;
     config.max_page_tokens = 600;
+    config.max_new_tokens = 2 * (config.max_page_tokens + 1) + 1;
     config.ngram_size = 35;
     config.ngram_window = 1024;
     PageViews page;
