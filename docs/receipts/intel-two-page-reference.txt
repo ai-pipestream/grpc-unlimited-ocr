@@ -1,0 +1,76 @@
+Sun Nov  8 22:47:58 UTC 2026
+5b52adda4e760c03e7bd374d41025811d9c71ee8
+ 17:47:58 up 9 days, 10:18,  5 users,  load average: 26.20, 36.65, 39.88
+               total        used        free      shared  buff/cache   available
+Mem:            61Gi        11Gi        24Gi       257Mi        26Gi        50Gi
+Swap:           63Gi        11Gi        52Gi
+2c2ecc5b24151503269aa08dae9556469deb1cae632e8c53172e6f88dae32fae  build-native/intel_multipage_reference
+07f8fcf1c709933a5add9258c6b09f492f810ad18c2b476f1abcf951934e34b5  tests/goldens/quickstart-p2/projector.f32
+4c40b740f209fd7682040d4ebf19409208acde5c401ccd2dde426d0f41542f18  model-00001-of-00002.safetensors
+9490b82fa47f89e5110eb5577f8ab1b6694c12121905dbc086ddb10207a4ba0c  model-00002-of-00002.safetensors
+dc60a31ecb77eb03e166345d18cbe25bc71d2a19cc6fc089d8a9ac1c7f209671  model.safetensors.index.json
+c55c165e32c5a67830362a53e1f548c8930dcc8469efa30ff3252a982799c589  tokenizer.json
+ceba7d221f265cca4c98b5e0a1d48c10107270b7b29c12396610d6d0fd64b126  tokenizer_config.json
+9e89493d7938e7710c524dbaff613c3648f0a018262417af78505128004e5cb4  special_tokens_map.json
+607d130a70d5af5a35329aa237acd68651f45504c62cc7ced981066f4e781126  config.json
+dcd0479f3a12e5e4413d956197f8a4074408e4901834b38c7e036519134e05af  generation_config.json
+model-00001-of-00002.safetensors: OK
+model-00002-of-00002.safetensors: OK
+model.safetensors.index.json: OK
+tokenizer.json: OK
+tokenizer_config.json: OK
+special_tokens_map.json: OK
+config.json: OK
+generation_config.json: OK
+reference decoder, upstream fp32 recorded vision, 2 pages, 2 CPU threads
+reference prefill complete prompt_tokens=553
+<PAGE><BLOCK>title<LEVEL1>[90, 67, 823, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[89, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 463]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 837, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+<PAGE><BLOCK>title<LEVEL2>[90, 67, 824, 100]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 463]<FORK>
+<BLOCK>image_caption[215, 515, 814, 538]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 837, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.<｜end▁of▁sentence｜>
+REFERENCE_RAW <PAGE><BLOCK>title<LEVEL1>[90, 67, 823, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[89, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 463]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 837, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+<PAGE><BLOCK>title<LEVEL2>[90, 67, 824, 100]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 463]<FORK>
+<BLOCK>image_caption[215, 515, 814, 538]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 837, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+reference complete tokens=348
+ok
+	Command being timed: "timeout --kill-after=10s 1800s nice -n10 stdbuf -oL -eL build-native/intel_multipage_reference"
+	User time (seconds): 48.47
+	System time (seconds): 3.34
+	Percent of CPU this job got: 133%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:38.84
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 17493204
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 3026637
+	Voluntary context switches: 12787
+	Involuntary context switches: 15711
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+Sun Nov  8 22:48:40 UTC 2026
