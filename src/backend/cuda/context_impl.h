@@ -7,6 +7,7 @@
 #include <cuda_runtime.h>
 
 #include <cstddef>
+#include <atomic>
 
 #include "backend/cuda/context.h"
 
@@ -20,6 +21,7 @@ struct Context::Impl {
   void* workspace = nullptr;
   void* blas_workspace = nullptr;
   std::size_t workspace_bytes = 32u << 20;
+  std::atomic<std::int64_t> allocation_failure_countdown{-1};
 };
 
 void check(cudaError_t status, const char* what);

@@ -26,8 +26,9 @@ namespace {
 
 void memory_phase(const char* phase) {
   const auto device = cuda::device_info(0);
-  std::println(stderr, "phase={} device={} free_bytes={} total_bytes={}",
-               phase, device.name, device.free_bytes, device.total_bytes);
+  std::println(stderr, "phase={} device={} free_bytes={} total_bytes={} pool_reserved={} pool_used={}",
+               phase, device.name, device.free_bytes, device.total_bytes,
+               device.pool_reserved_bytes, device.pool_used_bytes);
   std::ifstream status("/proc/self/status");
   for (std::string line; std::getline(status, line);)
     if (line.starts_with("VmRSS:") || line.starts_with("VmHWM:") ||

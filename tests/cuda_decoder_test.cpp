@@ -8,6 +8,7 @@
 
 #include "backend/cuda/context.h"
 #include "check.h"
+#include "runtime/generator.h"
 #include "model/cuda/cuda_decoder.h"
 #include "model/cuda/device_weight.h"
 #include "model/decoder.h"
@@ -136,6 +137,44 @@ void compare(cuda::WeightFormat format, double tolerance) {
       const double e = rel(dev.step(t, c, state.query_page(), blocks), ref.step(t, c, state.query_page(), blocks));
       if (t < 128 || t == PromptTokens{}.page) std::println("step {:>6}: relative error {:.2e}", t, e);
       require(e < tolerance, "decode logits agree");
+    }
+
+    dev.reset_request_state();
+    ctx.synchronize();
+    const auto model_bytes = cuda::device_info(0).pool_used_bytes;
+    auto large_prompt = prompt;
+    large_prompt.insert(large_prompt.end(), 1200, 7);
+    const auto large_embeds = ref.embed(large_prompt);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+      require(rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout)) < tolerance,
+              "prefill before allocation failure");
+      DecodeState before(layout, prompt);
+      const auto coord = before.advance(7);
+      require(rel(dev.step(7, coord, before.query_page(), blocks),
+                  ref.step(7, coord, before.query_page(), blocks)) < tolerance,
+              "captured step before allocation failure");
+      // Four prefill arrays, then two successful KV grows: fail midway
+      // through reserve while a previous captured step still exists.
+      ctx.fail_allocation_after_for_testing(6);
+      bool failed = false;
+      try {
+        GenerationConfig config;
+        config.max_new_tokens = 1;
+        (void)generate_from_embeddings(dev, large_prompt, large_embeds, config);
+      } catch (const std::bad_alloc&) {
+        failed = true;
+      }
+      ctx.fail_allocation_after_for_testing(-1);
+      require(failed, "injected partial KV allocation failure reached");
+      ctx.synchronize();
+      require(cuda::device_info(0).pool_used_bytes == model_bytes,
+              "failed request releases all request-owned device arrays");
+      dev.reset_request_state();
+      dev.reset_request_state();
+      require(rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout)) < tolerance,
+              "same decoder recovers after partial allocation failure");
+      dev.reset_request_state();
+      std::println("partial allocation failure/reuse cycle {} PASS", cycle);
     }
 }
 

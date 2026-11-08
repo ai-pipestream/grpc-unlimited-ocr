@@ -45,7 +45,12 @@ DeviceInfo device_info(int index) {
   check(cudaSetDevice(index), "cudaSetDevice");
   std::size_t free_b = 0, total_b = 0;
   check(cudaMemGetInfo(&free_b, &total_b), "cudaMemGetInfo");
-  return DeviceInfo{prop.name, prop.major, prop.minor, free_b, total_b};
+  DeviceInfo info{prop.name, prop.major, prop.minor, free_b, total_b};
+  cudaMemPool_t pool;
+  check(cudaDeviceGetDefaultMemPool(&pool, index), "cudaDeviceGetDefaultMemPool");
+  check(cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &info.pool_reserved_bytes), "pool reserved");
+  check(cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemCurrent, &info.pool_used_bytes), "pool used");
+  return info;
 }
 
 Context::Context(int device) : impl_(std::make_unique<Impl>()) {
@@ -75,7 +80,26 @@ Context::~Context() {
 
 void Context::synchronize() const { check(cudaStreamSynchronize(impl_->stream), "cudaStreamSynchronize"); }
 
+void Context::fail_allocation_after_for_testing(std::int64_t count) const noexcept {
+  impl_->allocation_failure_countdown.store(count);
+}
+
+void Context::abort_capture() const noexcept {
+  cudaStreamCaptureStatus status;
+  if (cudaStreamIsCapturing(impl_->stream, &status) == cudaSuccess && status != cudaStreamCaptureStatusNone) {
+    cudaGraph_t graph = nullptr;
+    (void)cudaStreamEndCapture(impl_->stream, &graph);
+    if (graph) (void)cudaGraphDestroy(graph);
+  }
+}
+
 void Context::require_headroom(std::uint64_t bytes) const {
+  // Finish queued frees and release unused pool reservations before admission.
+  // Live model and captured-graph allocations remain owned and untouched.
+  synchronize();
+  cudaMemPool_t pool;
+  check(cudaDeviceGetDefaultMemPool(&pool, impl_->device), "cudaDeviceGetDefaultMemPool");
+  check(cudaMemPoolTrimTo(pool, 0), "cudaMemPoolTrimTo");
   const auto info = device_info(impl_->device);
   if (info.free_bytes < bytes)
     throw std::runtime_error("CUDA model has insufficient free workspace headroom");
@@ -137,6 +161,11 @@ void copy_to_host(const Context& ctx, PinnedBuffer& dst, const void* device_src,
 
 Array::Array(const Context& ctx, DType type, std::int64_t count) : ctx_(&ctx), count_(count), type_(type) {
   const std::size_t bytes = static_cast<std::size_t>(count) * element_bytes(type);
+  auto remaining = ctx.impl().allocation_failure_countdown.load();
+  while (remaining >= 0) {
+    if (remaining == 0) throw std::bad_alloc();
+    if (ctx.impl().allocation_failure_countdown.compare_exchange_weak(remaining, remaining - 1)) break;
+  }
   if (bytes > 0) check(cudaMallocAsync(&data_, bytes, ctx.impl().stream), "cudaMallocAsync");
 }
 

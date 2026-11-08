@@ -17,6 +17,8 @@ struct DeviceInfo {
   int compute_minor = 0;
   std::uint64_t free_bytes = 0;
   std::uint64_t total_bytes = 0;
+  std::uint64_t pool_reserved_bytes = 0;
+  std::uint64_t pool_used_bytes = 0;
 };
 
 // Number of visible devices; 0 when there is no usable CUDA driver.
@@ -38,6 +40,10 @@ class Context {
   // Conservative admission check, not an allocation cap or peak guarantee.
   // On integrated GPUs also accounts for the container's shared-memory limit.
   void require_headroom(std::uint64_t bytes) const;
+  void abort_capture() const noexcept;
+  // Deterministic allocation-failure tests without exhausting the shared GPU.
+  // -1 disables injection; 0 fails the next Array allocation.
+  void fail_allocation_after_for_testing(std::int64_t successful_allocations) const noexcept;
 
   // Records everything enqueued between the two calls as a graph instead
   // of running it.
