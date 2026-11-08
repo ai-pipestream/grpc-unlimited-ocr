@@ -92,22 +92,24 @@ struct Snapshot {
   std::vector<std::string> documents;
   bool operator==(const Snapshot&) const = default;
 };
+bool external_server = false;
 std::uint64_t anonymous_bytes() {
-  std::ifstream in("/proc/self/status");
+  std::ifstream in(external_server ? "/proc/1/status" : "/proc/self/status");
   std::string line;
   while (std::getline(in, line))
     if (line.starts_with("RssAnon:")) return std::stoull(line.substr(8)) * 1024;
   throw std::runtime_error("cannot read process anonymous memory");
 }
-void idle(service::UnlimitedOcrServiceImpl& svc) {
+void idle(service::UnlimitedOcrServiceImpl* svc) {
+  if (!svc) return;
   const auto until = std::chrono::steady_clock::now() + 10s;
-  while ((svc.buffered_bytes().in_use() != 0 || svc.document_slots().in_use() != 0) &&
+  while ((svc->buffered_bytes().in_use() != 0 || svc->document_slots().in_use() != 0) &&
          std::chrono::steady_clock::now() < until)
     std::this_thread::sleep_for(10ms);
-  require(svc.buffered_bytes().in_use() == 0 && svc.document_slots().in_use() == 0,
+  require(svc->buffered_bytes().in_use() == 0 && svc->document_slots().in_use() == 0,
           "all input and document leases returned");
 }
-Snapshot parse(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrServiceImpl& svc, const std::string& png,
+Snapshot parse(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrServiceImpl* svc, const std::string& png,
                int pages) {
   const auto start = std::chrono::steady_clock::now();
   grpc::ClientContext context;
@@ -166,7 +168,7 @@ Snapshot parse(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrService
                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(), anonymous_bytes());
   return result;
 }
-void cancel(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrServiceImpl& svc, const std::string& png) {
+void cancel(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrServiceImpl* svc, const std::string& png) {
   grpc::ClientContext context;
   context.set_deadline(std::chrono::system_clock::now() + 10min);
   auto stream = stub.ParseDocument(&context);
@@ -178,6 +180,7 @@ void cancel(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrServiceImp
   while (stream->Read(&event)) {
   }
   require(stream->Finish().error_code() == grpc::StatusCode::CANCELLED, "in-flight native decode cancelled");
+  if (!svc) std::this_thread::sleep_for(1s);  // External recovery must admit within this grace.
   idle(svc);
   std::println("CANCEL after_prefill_ms={:.3f}",
                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
@@ -185,49 +188,70 @@ void cancel(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrServiceImp
 }  // namespace
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--check-golden-assertions") return run_tests(check_golden_assertions);
+  external_server = argc >= 3 && std::string(argv[1]) == "--endpoint";
+  const bool info_only = external_server && argc == 4 && std::string(argv[3]) == "--info-only";
+  if (!(argc == 1 || (external_server && (argc == 3 || info_only)))) return 64;
   const char* models = env_or_null("UOCR_MODELS_DIR");
-  if (!models) return skip("UOCR_MODELS_DIR absent");
+  if (!models && !external_server) return skip("UOCR_MODELS_DIR absent");
   return run_tests([&] {
     service::Config config;
     config.backend = "intel-gpu";
     config.weight_format = "bf16";
-    config.models_dir = models;
+    config.models_dir = models ? models : "";
     config.device_memory_cap = 12ULL << 30;
     config.page_window = 2;
     config.max_pages = 2;
     config.max_tokens_per_page = 600;
-    const auto engine = service::load_model_engine(config);
-    service::UnlimitedOcrServiceImpl svc(config, *engine);
-    grpc::ServerBuilder builder;
-    builder.RegisterService(&svc);
+    std::unique_ptr<service::Engine> engine;
+    std::unique_ptr<service::UnlimitedOcrServiceImpl> svc;
+    std::unique_ptr<grpc::Server> server;
     int port = 0;
-    builder.AddListeningPort("127.0.0.1:0", grpc::InsecureServerCredentials(), &port);
-    const auto server = builder.BuildAndStart();
-    require(server != nullptr && port != 0, "loopback TCP server started");
+    if (!external_server) {
+      engine = service::load_model_engine(config);
+      svc = std::make_unique<service::UnlimitedOcrServiceImpl>(config, *engine);
+      grpc::ServerBuilder builder;
+      builder.RegisterService(svc.get());
+      builder.AddListeningPort("127.0.0.1:0", grpc::InsecureServerCredentials(), &port);
+      server = builder.BuildAndStart();
+      require(server != nullptr && port != 0, "loopback TCP server started");
+    }
     struct Shutdown {
-      grpc::Server& server;
+      grpc::Server* server;
       ~Shutdown() {
-        server.Shutdown(std::chrono::system_clock::now() + 10s);
-        server.Wait();
+        if (server) {
+          server->Shutdown(std::chrono::system_clock::now() + 10s);
+          server->Wait();
+        }
       }
-    } shutdown{*server};
-    const auto stub = v1::UnlimitedOcrService::NewStub(
-        grpc::CreateChannel("127.0.0.1:" + std::to_string(port), grpc::InsecureChannelCredentials()));
+    } shutdown{server.get()};
+    const auto endpoint = external_server ? std::string(argv[2]) : "127.0.0.1:" + std::to_string(port);
+    const auto channel = grpc::CreateChannel(endpoint, grpc::InsecureChannelCredentials());
+    require(channel->WaitForConnected(std::chrono::system_clock::now() + 120s), "server boot/readiness deadline");
+    const auto stub = v1::UnlimitedOcrService::NewStub(channel);
     grpc::ClientContext info_ctx;
+    info_ctx.set_deadline(std::chrono::system_clock::now() + 10s);
     v1::GetServiceInfoResponse info;
     require(stub->GetServiceInfo(&info_ctx, {}, &info).ok(), "typed service info");
     require(info.backend() == "intel-gpu" && info.weight_format() == "bf16" &&
                 info.device().find("Intel") != std::string::npos,
             "actual Intel backend identity");
+    if (const auto* expected = env_or_null("UOCR_REQUIRED_DEVICE"))
+      require(info.device() == expected, "requested qualification device identity");
     std::println("RPC backend={} device={} precision={} manifest={}", info.backend(), info.device(),
                  info.weight_format(), info.manifest_sha256());
+    if (info_only) return;
+    if (external_server) {
+      require(std::filesystem::read_symlink("/proc/1/exe").filename() == "grpc-unlimited-ocr-server",
+              "external RSS gate must run in the server container PID namespace");
+      std::println("external server matrix: RSS=/proc/1/status; admission proven by recovery after 1s grace");
+    }
     const auto png = read_text(std::string(UOCR_GOLDENS) + "/quickstart-p2/page.png");
-    const auto one = parse(*stub, svc, png, 1), two = parse(*stub, svc, png, 2);
+    const auto one = parse(*stub, svc.get(), png, 1), two = parse(*stub, svc.get(), png, 2);
     const auto warm = anonymous_bytes();
     for (int repeat = 0; repeat < 3; ++repeat) {
-      cancel(*stub, svc, png);
-      require(parse(*stub, svc, png, 1) == one, "one-page recovery deterministic and content checked");
-      require(parse(*stub, svc, png, 2) == two, "two-page repeat deterministic and content checked");
+      cancel(*stub, svc.get(), png);
+      require(parse(*stub, svc.get(), png, 1) == one, "one-page recovery deterministic and content checked");
+      require(parse(*stub, svc.get(), png, 2) == two, "two-page repeat deterministic and content checked");
       require(anonymous_bytes() <= warm + (128ULL << 20), "anonymous RSS bounded after shape warmup");
     }
   });

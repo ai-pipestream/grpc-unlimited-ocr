@@ -16,8 +16,7 @@ set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(grpc
   GIT_REPOSITORY https://github.com/grpc/grpc.git
-  GIT_TAG v1.83.0
-  GIT_SHALLOW TRUE
+  GIT_TAG c876f4da50f7da2f331888b88b2a7243514139fe
   GIT_SUBMODULES_RECURSE TRUE
   SYSTEM)
 # An ASan build instruments gRPC, protobuf and abseil too: their inline

@@ -30,8 +30,7 @@ include(FetchContent)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.12.0
-  GIT_SHALLOW TRUE)
+  GIT_TAG 55f93686c01528224f448c19128836e7df245f72)
 FetchContent_MakeAvailable(nlohmann_json)
 
 # stb_image (public domain or MIT): PNG and JPEG decode of page rasters.
@@ -141,9 +140,8 @@ if(UOCR_WITH_SERVER)
   include(cmake/server.cmake)
 endif()
 
-# Initial Intel primitive qualification only. No Intel model/service advertised
-# until vision, decoder and real-page gates are implemented and measured.
-option(UOCR_WITH_INTEL "Build native Intel SYCL primitive kernels" OFF)
+# Full native Intel GPU model and its primitive/reference tests.
+option(UOCR_WITH_INTEL "Build native Intel SYCL vision, decoder and service backend" OFF)
 if(UOCR_WITH_INTEL)
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-fsycl" UOCR_COMPILER_HAS_SYCL)

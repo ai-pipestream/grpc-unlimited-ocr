@@ -1,0 +1,12 @@
+766ffc69a39b16268e022744b74c15bf747f120eb55a4f3628148d025023f968  /opt/intel/oneapi/compiler/2025.3/bin/icpx
+18fa367fb7be21f05e718555b50e4d5dec000322cc40e6c48d596b3f2ab4f394  /opt/intel/oneapi/compiler/2025.3/lib/libsycl.so.8
+e0d8e2f9d90acc0225c9b09554118877ae3c0c06dca832384a6b653ec04479ad  /opt/intel/oneapi/compiler/2025.3/lib/libOpenCL.so.1
+790057ec30cbac2f66dec0a88520a706d655deae6670427bc38bb3f574f8602d  /opt/intel/oneapi/compiler/2025.3/lib/libur_adapter_level_zero.so.0
+faa9f5abd0e56e6ff50e08d09b9a14e8ca16950012f29a60c882b39b278052fd  /opt/intel/oneapi/dnnl/2025.3/lib/libdnnl.so.3
+4e29156ffc1ea9880dc46a95bb802ffceaa1dc190ecf9b635e1657d1b541a43a  /opt/intel/oneapi/tbb/2022.3/lib/intel64/gcc4.8/libtbb.so.12
+32d668526c7e76ed48a27f1727fd1028a221acf58f2c97274bc3deadc1867df9  /opt/intel/oneapi/compiler/2025.3/lib/libur_loader.so.0
+cd48cff6075e617c29952d74ae281757c05ac9d5958f7c3fabdcb0dc7baae924  /opt/intel/oneapi/compiler/2025.3/lib/libur_adapter_level_zero_v2.so.0
+30bc176842cad6c14179d827b30f7a71962591ee33b91c65831c6b09335d1178  /opt/intel/oneapi/compiler/2025.3/lib/libsvml.so
+16efc27aa9c0aeef3c12afa7d57c74f3fa9501beeedaf56fc51d5a2f7013228a  /opt/intel/oneapi/compiler/2025.3/lib/libimf.so
+36d59dd44cbe8eb622ac1e477b0d5c775e95452f026dc1edad38ce55f72f981e  /opt/intel/oneapi/compiler/2025.3/lib/libintlc.so.5
+5358df7bb9ef73c57a2ce2bba8b1919b0c00a30d752ee60f26e87109561842a8  /opt/intel/oneapi/compiler/2025.3/lib/libirng.so
