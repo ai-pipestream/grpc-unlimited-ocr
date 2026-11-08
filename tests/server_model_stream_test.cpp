@@ -33,8 +33,12 @@ int main(int argc, char** argv) {
     service::UnlimitedOcrServiceImpl service(config, *engine);
     grpc::ServerBuilder builder;
     builder.RegisterService(&service);
+    int port = 0;
+    builder.AddListeningPort("127.0.0.1:0", grpc::InsecureServerCredentials(), &port);
     const auto server = builder.BuildAndStart();
-    const auto stub = v1::UnlimitedOcrService::NewStub(server->InProcessChannel({}));
+    require(server != nullptr && port != 0, "real loopback server started");
+    const auto stub = v1::UnlimitedOcrService::NewStub(grpc::CreateChannel(
+        "127.0.0.1:" + std::to_string(port), grpc::InsecureChannelCredentials()));
     grpc::ClientContext info_context;
     v1::GetServiceInfoResponse info;
     require(stub->GetServiceInfo(&info_context, {}, &info).ok(), "real model service info");
@@ -47,7 +51,7 @@ int main(int argc, char** argv) {
       return;
     }
     const auto png = read_text(std::string(UOCR_GOLDENS) + "/quickstart-p2/page.png");
-    for (const int pages : {1, 2, 1, 2, 1, 2}) {
+    const auto verify_rpc = [&](int pages) {
       const auto request_start = std::chrono::steady_clock::now();
       std::println("starting {} page(s): backend={}, precision={}", pages, info.backend(), info.weight_format());
       grpc::ClientContext context;
@@ -95,7 +99,9 @@ int main(int argc, char** argv) {
       std::println("hardware RPC backend={} pages={} seconds={:.6f}: content, boxes, tokens and fragments PASS",
                    engine->info().backend, pages,
                    std::chrono::duration<double>(std::chrono::steady_clock::now() - request_start).count());
-    }
+    };
+    for (const int pages : {1, 2, 1, 2, 1, 2}) verify_rpc(pages);
+    for (int cycle = 0; cycle < 3; ++cycle) {
     grpc::ClientContext context;
     context.set_deadline(std::chrono::system_clock::now() + 20min);
     auto stream = stub->ParseDocument(&context);
@@ -110,12 +116,9 @@ int main(int argc, char** argv) {
     while (service.document_slots().in_use() != 0 && std::chrono::steady_clock::now() < released_by)
       std::this_thread::sleep_for(10ms);
     require(service.document_slots().in_use() == 0, "cancel releases admission before recovery");
-    auto recovery = document(options_request(1));
-    recovery[1] = page_request(1, png);
-    const auto recovered = run(service, recovery);
-    require(recovered.status.ok(), "post-cancellation real RPC recovery");
-    check_fixture_content(recovered.blocks(), 1);
-    std::println("real-model cancellation and subsequent text/geometry recovery PASS");
+    verify_rpc(1);
+    std::println("real-model TCP cancellation/recovery cycle {} PASS", cycle);
+    }
     server->Shutdown(std::chrono::system_clock::now() + 10s);
     server->Wait();
     require(service.buffered_bytes().in_use() == 0 && service.document_slots().in_use() == 0,
