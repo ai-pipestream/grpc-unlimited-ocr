@@ -1,0 +1,85 @@
+2026-11-08T22:24:15Z
+ 17:24:15 up 9 days,  9:55,  5 users,  load average: 6.34, 9.10, 23.53
+43f7e8a810a31f88f236e03fdf900e2ad3272b37
+ CMakeLists.txt                    |  4 ++++
+ src/backend/intel/native/gemm.cpp | 10 ++++++++++
+ src/backend/intel/native/ops.h    |  3 +++
+ src/model/intel/intel_vision.cpp  |  2 +-
+ src/model/intel/intel_vision.h    |  1 +
+ tests/intel_native_ops_test.cpp   |  7 +++++++
+ 6 files changed, 26 insertions(+), 1 deletion(-)
+START intel_numeric_guard_test
+96aec4648ee53ed3155c4e73be9bb0be49ddcf2fee271009ade397680437c535  build-native/intel_numeric_guard_test
+ok
+PASS intel_numeric_guard_test
+START intel_native_ops_test
+e0f604ce1b7bac09caa19607fdf818083625d8f9dd0e409fd19bf4ef6661ab68  build-native/intel_native_ops_test
+actual device=Intel(R) Arc(TM) Pro B70 Graphics cap_bytes=27393838284
+position linear table  rel err 8.98e-07 (tol 2e-06)
+position cubic grid    rel err 8.31e-08 (tol 2e-06)
+linear bf16            rel err 8.04e-08 (tol 1e-05)
+model GEMM shape M=1 N=1280 K=1280
+model bf16 projection  rel err 1.21e-07 (tol 2e-05)
+vision fp32-input projection rel err 2.94e-07 (tol 2e-05)
+model GEMM shape M=17 N=1280 K=1280
+model bf16 projection  rel err 1.44e-07 (tol 2e-05)
+vision fp32-input projection rel err 1.56e-06 (tol 2e-05)
+model GEMM shape M=17 N=2304 K=768
+model bf16 projection  rel err 2.96e-07 (tol 2e-05)
+vision fp32-input projection rel err 9.01e-07 (tol 2e-05)
+model GEMM shape M=3 N=6848 K=1280
+model bf16 projection  rel err 3.32e-07 (tol 2e-05)
+vision fp32-input projection rel err 7.40e-07 (tol 2e-05)
+model GEMM shape M=1 N=896 K=1280
+model bf16 projection  rel err 1.34e-07 (tol 2e-05)
+vision fp32-input projection rel err 2.89e-07 (tol 2e-05)
+gemm_nt batched        rel err 9.54e-07 (tol 1e-05)
+gemm_nn                rel err 1.08e-07 (tol 1e-05)
+offset LayerNorm width=2
+offset low-variance layer_norm rel err 0.00e+00 (tol 1e-05)
+offset LayerNorm width=768
+offset low-variance layer_norm rel err 9.51e-07 (tol 1e-05)
+offset LayerNorm width=1024
+offset low-variance layer_norm rel err 2.46e-06 (tol 1e-05)
+layer_norm             rel err 2.35e-07 (tol 1e-05)
+rms_norm               rel err 1.94e-07 (tol 1e-05)
+gelu_erf               rel err 6.43e-08 (tol 1e-06)
+quick_gelu             rel err 6.44e-08 (tol 1e-06)
+softmax_rows           rel err 1.89e-07 (tol 1e-05)
+conv2d via im2col      rel err 5.76e-08 (tol 1e-05)
+rope page2d            rel err 1.00e-07 (tol 1e-05)
+block_summaries        rel err 2.05e-07 (tol 1e-05)
+route_blocks bias      rel err 0.00e+00 (tol 1e-05)
+ok
+PASS intel_native_ops_test
+START intel_native_decoder_test
+4ef23b2556cc3387bc12eaf856aad656d9ef0b921ba0bea16cfd3407140e2cd8  build-native/intel_native_decoder_test
+weights bf16
+prefill logits: relative error 3.52e-03
+step      7: relative error 3.90e-03
+step      9: relative error 4.30e-03
+step 128827: relative error 7.66e-03
+step     11: relative error 3.42e-03
+step    100: relative error 4.23e-03
+step    113: relative error 6.84e-03
+step    126: relative error 5.70e-03
+failure_recovery case=0 retained=17239856 peak=17762648 cap=67108864 PASS
+failure_recovery case=1 retained=17239856 peak=67108863 cap=67108864 PASS
+failure_recovery case=2 retained=17239856 peak=67108863 cap=67108864 PASS
+ok
+PASS intel_native_decoder_test
+START intel_native_vision_test
+040c40043871f20cbd31c67156d8b71f9ee0a7a554799018d774a44e5a5ec2b9  build-native/intel_native_vision_test
+tiny model, tiled page: relative error 2.59e-03
+ok
+PASS intel_native_vision_test
+sysman_device=Intel(R) Arc(TM) Pro B70 Graphics
+memory_free_bytes=15286980608 memory_size_bytes=34242297856 required_free_bytes=12884901888
+7261241ebcdceddc3708222ca5ce60b0941a34cc5a42cd3915ada74c8a8a029b  build-native/intel_vision_diagnostic
+device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=7844 gpu_gemms=4949
+DIAGNOSTIC sam max_relative=0.007932487294348532 l2_relative=0.004805468215222965 worst_index=49233 actual=0.066407174 expected=0.06111942
+DIAGNOSTIC projector max_relative=0.06301539569227911 l2_relative=0.028291274243741487 worst_index=166098 actual=-1.229631 expected=-0.9773516
+DIAGNOSTIC ONLY retained=818249728 peak=1070955521
+ok
+FP32 CANDIDATE DIAGNOSTIC RELEASE
+2026-11-08T22:24:22Z

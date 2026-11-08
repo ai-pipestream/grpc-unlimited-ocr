@@ -307,6 +307,14 @@ baselines after each backend's phase. Notes per target:
 
 ### 4.5 Apple Silicon
 
+The native backend implementation and qualification gates are documented in
+[metal.md](metal.md). Its current implementation uses Objective-C++ Metal
+API bindings, bf16 stored weights, fp32 activations and accumulation, MPS
+only for GEMM, and explicit per-step command encoding. It does not yet use
+no-copy weight imports or indirect command buffer replay. Hardware claims
+are limited to the [M2 qualification receipt](receipts/metal-m2-20261108.md).
+
+
 There is no off-the-shelf Apple library that loads this model, and the
 ones that come close are runtimes, which this design rules out:
 
@@ -318,11 +326,12 @@ ones that come close are runtimes, which this design rules out:
 | MLX C++ core (MIT) | Apple's array framework with lazy graphs and good Metal kernels | no as a dependency (a runtime); yes as a reference. Its Metal kernels (GEMM, quantised GEMV, attention) are MIT and can be read or adapted with the notice |
 | ggml Metal backend (MIT) | ggml's MSL kernels | reference only, same reasoning as 4.8 |
 
-Unified memory is the Apple advantage: the safetensors shards are
-memory-mapped and handed to Metal as no-copy buffers, so loading is close
-to free and nothing is duplicated. Apple GPUs from M1 take bf16 through
-Metal 3.1 or later; on older OS releases the backend falls back to fp16,
-held to the same parity gate (4.7) before it is allowed.
+A future optimization can import the memory-mapped safetensors shards
+as no-copy Metal buffers. The current implementation copies their bf16
+weights into shared buffers. The implemented kernels read those original
+bf16 bits and widen to float,
+including on M2. They never narrow weights to fp16 or silently fall back
+to another backend.
 
 Metal is not reachable from a Linux container on macOS (the fleet already
 found the same for Core ML), so the Apple backend ships as a native macOS
@@ -729,10 +738,15 @@ and stop reason, so the merge keeps attribution.
   P9. Continuation chains still link across windows.
 - Every item's `CollectorSource` carries the model's mean log-probability
   over the steps behind it (`raw_score_kind` `mean_logprob`).
-- `GRPC_UOCR_DEVICE_MEMORY_CAP` is not read yet: no backend allocates from
-  a capped arena.
+- The Intel backend applies `GRPC_UOCR_DEVICE_MEMORY_CAP` to native USM
+  and explicit GEMM scratch. Other backends do not enforce this setting.
+  Driver caches and host memory are separate. See `intel-native.md`.
 
 ## 6. gRParse integration
+
+This phase remains planned. The current coordinator has no native Unlimited
+OCR collector client, target setting, compose overlay or shell tab. Running
+the standalone service does not enable it in gRParse.
 
 - **Contract.** Vendor `unlimited_ocr.proto` into `collectors/`, add it to
   the CMake proto list, and `examples/web-demo/sync-peer-protos.sh` for
@@ -798,6 +812,12 @@ Configuration, all `GRPC_UOCR_*` environment variables: listen address
 device memory cap, models dir, page window, per-page token cap, max pages and max page bytes
 per stream, buffered-bytes budgets per stream and per server, documents
 in flight.
+
+`GRPC_UOCR_DEVICE_MEMORY_CAP` currently bounds engine-owned device buffers
+on Intel and Metal. Metal defaults to the smaller of 12 GiB and the device
+recommended working set; Intel defaults to 80% of device memory. Vendor
+library allocations and host memory are outside this accounting. Other
+backends reject a nonzero cap rather than silently ignoring it.
 
 A compose overlay keeps it out of the default stack and wires gRParse to
 it only when used:

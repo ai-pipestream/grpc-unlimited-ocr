@@ -19,12 +19,23 @@
 
 #include "image/page_preprocess.h"
 #include "model/decoder.h"
+#include "backend/reference/parallel.h"
 #include "model/vision_encoder.h"
 #include "runtime/generator.h"
 #include "tokenizer/tokenizer.h"
 #include "weights/architecture.h"
 #include "weights/sharded_weights.h"
 
+#if UOCR_WITH_METAL
+#include "backend/metal/context.h"
+#include "model/metal/metal_decoder.h"
+#include "model/metal/metal_vision.h"
+#endif
+
+#if UOCR_WITH_INTEL
+#include "model/intel/intel_decoder.h"
+#include "model/intel/intel_vision.h"
+#endif
 #if UOCR_WITH_CUDA
 #include "backend/cuda/context.h"
 #include "model/cuda/cuda_decoder.h"
@@ -71,13 +82,14 @@ void save_run(const std::filesystem::path& dir, const Tokenizer& tok, const Gene
 }
 
 int usage() {
-  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] [--backend reference|cuda] [--weights bf16|int8] page...");
+  std::println(stderr, "usage: uocr-run --models DIR [--tiled] [--ngram N] [--window N] [--max-new N] [--save DIR] [--backend reference|cuda|intel-gpu|metal] [--weights bf16|int8] page...");
   return 64;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
+  reference::set_thread_count(2);
   std::string models;
   std::vector<std::string> pages;
   std::string save_dir;
@@ -116,6 +128,12 @@ int main(int argc, char** argv) {
 #if UOCR_WITH_CUDA
     std::unique_ptr<cuda::Context> cuda_ctx;  // declared first: device arrays must go before it
 #endif
+#if UOCR_WITH_METAL
+    std::unique_ptr<metal::Context> metal_ctx;
+#endif
+#if UOCR_WITH_INTEL
+    std::unique_ptr<intel_native::Context> intel_ctx;
+#endif
     std::unique_ptr<VisionModel> vision_model;
     std::unique_ptr<Decoder> reference_decoder;
     std::unique_ptr<DecoderModel> decoder_model;
@@ -135,7 +153,23 @@ int main(int argc, char** argv) {
           *cuda_ctx, weights, DecoderDims{}, cuda::CudaDecoder::default_router_params(),
           weights_format == "int8" ? cuda::WeightFormat::kInt8 : cuda::WeightFormat::kBf16);
 #endif
+#if UOCR_WITH_METAL
+    } else if (backend == "metal") {
+      if (weights_format != "bf16") throw std::invalid_argument("Metal requires upstream bf16 weights");
+      metal_ctx = std::make_unique<metal::Context>(0);
+      vision_model = std::make_unique<metal::MetalVisionEncoder>(*metal_ctx, weights);
+      decoder_model = std::make_unique<metal::MetalDecoder>(*metal_ctx, weights);
+#endif
+#if UOCR_WITH_INTEL
+    } else if (backend == "intel-gpu") {
+      if (weights_format != "bf16") throw std::invalid_argument("Intel requires bf16 weights");
+      intel_ctx = std::make_unique<intel_native::Context>(0);
+      vision_model = std::make_unique<intel_native::IntelVisionEncoder>(*intel_ctx, weights);
+      decoder_model = std::make_unique<intel_native::IntelDecoder>(*intel_ctx, weights);
+      std::println(stderr, "native Intel device: {}", intel_ctx->device_name());
+#endif
     } else {
+
       std::println(stderr, "unknown or unbuilt backend: {}", backend);
       return 64;
     }

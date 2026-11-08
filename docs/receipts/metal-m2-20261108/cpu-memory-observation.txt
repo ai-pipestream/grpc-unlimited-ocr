@@ -1,0 +1,12 @@
+Live read-only observation of CPU PID46961, approximately120seconds after launch.
+Command: vmmap -summary 46961 | head -35
+Date/Time: 2026-11-08 16:41:33.052 -0500
+Launch Time: 2026-11-08 16:39:33.255 -0500
+Physical footprint:         12.9G
+Physical footprint (peak):  12.9G
+Writable regions: Total=13.3G written=12.9G(97%) resident=2.0G(15%) swapped_out=10.9G(82%) unallocated=437.7M(3%)
+Malloc Large: SIZE12.8G RESIDENT2.0G DIRTY2.0G SWAPPED10.5G
+Earlier sysctl vm.swapusage: total13312.00M used12915.88M free396.12M.
+Pre-run swap usage was not recorded; total system swap is not wholly attributed to this test.
+The process-specific vmmap observation establishes heavy swapping of the CPU model itself.
+Timing is therefore not a clean CPU/Metal performance comparison.

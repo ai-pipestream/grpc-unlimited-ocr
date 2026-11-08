@@ -4,6 +4,8 @@
 // (golden_test). Needs UOCR_MODELS_DIR and a device; skips (77) otherwise.
 
 #include <fstream>
+#include <chrono>
+#include <cstdio>
 #include <iterator>
 #include <regex>
 #include <string>
@@ -21,6 +23,22 @@
 using namespace uocr;
 
 namespace {
+
+void memory_phase(const char* phase) {
+  const auto device = cuda::device_info(0);
+  std::println(stderr, "phase={} device={} free_bytes={} total_bytes={} pool_reserved={} pool_used={}",
+               phase, device.name, device.free_bytes, device.total_bytes,
+               device.pool_reserved_bytes, device.pool_used_bytes);
+  std::ifstream status("/proc/self/status");
+  for (std::string line; std::getline(status, line);)
+    if (line.starts_with("VmRSS:") || line.starts_with("VmHWM:") ||
+        line.starts_with("RssAnon:") || line.starts_with("RssFile:")) std::println(stderr, "{}", line);
+  for (const auto* name : {"memory.current", "memory.peak", "memory.events"}) {
+    std::ifstream in(std::string("/sys/fs/cgroup/") + name);
+    for (std::string line; std::getline(in, line);) std::println(stderr, "{} {}", name, line);
+  }
+  std::fflush(stderr);
+}
 
 std::string text_of(const std::filesystem::path& p) {
   std::ifstream in(p, std::ios::binary);
@@ -50,7 +68,9 @@ int main() {
     const CheckpointWeights weights(shards);
     const auto tok = Tokenizer::load(std::filesystem::path(models) / "tokenizer.json");
     const cuda::Context ctx(0);
+    memory_phase("before-vision-load");
     const cuda::CudaVisionEncoder vision(ctx, weights);
+    memory_phase("after-vision-load");
     const std::string png = text_of(golden / "page.png");
     const auto page = preprocess_page(decode_image({reinterpret_cast<const std::uint8_t*>(png.data()), png.size()}));
     const auto [want, want_boxes] = split_boxes(text_of(golden / "output_raw.txt"));
@@ -59,10 +79,16 @@ int main() {
     std::vector<cuda::WeightFormat> formats{cuda::WeightFormat::kInt8};
     if (cuda::device_info(0).total_bytes >= (12ULL << 30)) formats.insert(formats.begin(), cuda::WeightFormat::kBf16);
     for (const auto format : formats) {
+      memory_phase(format == cuda::WeightFormat::kBf16 ? "before-bf16-decoder-load" : "before-int8-decoder-load");
       cuda::CudaDecoder decoder(ctx, weights, DecoderDims{}, cuda::CudaDecoder::default_router_params(), format);
+      memory_phase("after-decoder-load");
       GenerationConfig config;
       config.max_new_tokens = 600;
+      const auto start = std::chrono::steady_clock::now();
       const auto result = generate(vision, decoder, {page}, config);
+      memory_phase("after-generation");
+      std::println(stderr, "generation seconds={:.6f}",
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
       require(result.finish == FinishReason::kEndOfSequence, "the page ends with EOS");
       const auto [ours, our_boxes] = split_boxes(tok.decode(result.tokens));
       require(ours == want, "text, labels and structure match upstream fp32");

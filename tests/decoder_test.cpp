@@ -99,6 +99,11 @@ int main() {
     const auto a = generate_from_embeddings(first_run, prompt, embeds, gc);
     const auto b = generate_from_embeddings(second_run, prompt, embeds, gc);
     require(a.tokens == b.tokens, "greedy generation is deterministic");
+    first_run.reset_request_state();
+    first_run.reset_request_state();
+    const auto recovered = generate_from_embeddings(first_run, prompt, embeds, gc);
+    require(recovered.tokens == a.tokens && recovered.finish == a.finish,
+            "reference decoder remains reusable after repeated request reset");
     const std::size_t eos = a.finish == FinishReason::kEndOfSequence ? 1 : 0;
     require(a.trace.size() == a.tokens.size() + eos, "one trace row per step, EOS step included");
     for (std::size_t i = 0; i < a.tokens.size(); ++i) {

@@ -1,0 +1,40 @@
+CORRECTED TINY START 2026-11-08T22:07:38Z
+6ffeca729e8e77d1f754fdd1ff8abb3a130902d9
+ CMakeLists.txt                          |  6 ++-
+ src/backend/intel/native/context.cpp    | 31 ++++++++++--
+ src/backend/intel/native/context.h      |  2 +
+ src/backend/intel/native/context_impl.h |  2 +
+ src/backend/intel/native/ops.cpp        | 15 ++++--
+ src/model/decoder_model.h               |  5 ++
+ src/model/intel/intel_decoder.cpp       | 15 ++++++
+ src/model/intel/intel_decoder.h         |  2 +
+ src/runtime/generator.cpp               | 19 +++++++
+ tests/intel_native_decoder_test.cpp     | 89 ++++++++++++++++++++++++++++++++-
+ tests/intel_native_ops_test.cpp         | 14 ++++++
+ 11 files changed, 189 insertions(+), 11 deletions(-)
+START generator_recovery_test
+9172618158b89e9e8cfe260e3c2e33d98ff434c29e69a136d57a35f7c9b2470a  build-native/generator_recovery_test
+ok
+PASS generator_recovery_test
+START intel_numeric_guard_test
+96aec4648ee53ed3155c4e73be9bb0be49ddcf2fee271009ade397680437c535  build-native/intel_numeric_guard_test
+ok
+PASS intel_numeric_guard_test
+START intel_ops_test
+f7048a71796727501281ba8f7c0715857e52b832a562973d74c881dd72efeb40  build-native/intel_ops_test
+device=Intel(R) Arc(TM) Pro B70 Graphics driver=1.15.39122
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=2.38419e-07
+rms_norm count=903 max_abs=2.38419e-07
+softmax_masked count=903 max_abs=1.11759e-08
+linear_100_device_us=1801
+linear_bias count=91 max_abs=4.29153e-06
+linear_no_bias count=91 max_abs=4.29153e-06
+PASS initial Intel primitive parity; full model has separate qualification gates
+PASS intel_ops_test
+START intel_native_ops_test
+59af43947ba0b743dc849b9129a1d24f2befa70e1980a3700ed39af23f45a758  build-native/intel_native_ops_test
+actual device=Intel(R) Arc(TM) Pro B70 Graphics cap_bytes=27393838284
+position linear table  rel err 2.68e-06 (tol 2e-06)
+FAIL: position linear table

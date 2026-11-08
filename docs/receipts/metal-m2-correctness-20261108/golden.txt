@@ -1,0 +1,60 @@
+UpdateCTestConfiguration  from :/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Parse Config file:/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Test project /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 7
+    Start 7: metal_golden_test
+
+7: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_golden_test
+7: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+7: Test timeout computed to be: 900
+7: 2026-11-08 17:00:55.038 metal_golden_test[49783:6844913] Metal API Validation Enabled
+7: device=Apple M2 weights=upstream-bf16 activations=fp32 accumulation=fp32
+7: repeat=0 prefill_tokens=279 prefill_seconds=7.151
+7: repeat=0 steps=32
+7: repeat=0 steps=64
+7: repeat=0 steps=96
+7: repeat=0 steps=128
+7: repeat=0 steps=160
+7: repeat=0 seconds=25.458 decode_seconds=18.307 tokens=171 peak_rss_bytes=6604357632 metal_live_bytes=6829784464 metal_peak_bytes=7132895488 metal_device_allocated_bytes=6830735360 kernels=71930 gemms=53264
+7: bf16: 6 boxes, largest coordinate difference 0
+7: repeat=1 prefill_tokens=279 prefill_seconds=6.430
+7: repeat=1 steps=32
+7: repeat=1 steps=64
+7: repeat=1 steps=96
+7: repeat=1 steps=128
+7: repeat=1 steps=160
+7: repeat=1 seconds=24.642 decode_seconds=18.212 tokens=171 peak_rss_bytes=6604357632 metal_live_bytes=6829784464 metal_peak_bytes=7315618256 metal_device_allocated_bytes=6830735360 kernels=71903 gemms=53264
+7: bf16: 6 boxes, largest coordinate difference 0
+7: ok
+1/1 Test #7: metal_golden_test ................   Passed   72.58 sec
+
+The following tests passed:
+	metal_golden_test
+
+100% tests passed out of 1
+
+Total Test time (real) =  72.59 sec
+       72.59 real         3.81 user         5.49 sys
+          6604357632  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              498607  page reclaims
+              407926  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 245  voluntary context switches
+              223259  involuntary context switches
+            89133584  instructions retired
+            37947908  cycles elapsed
+             3473888  peak memory footprint

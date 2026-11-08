@@ -1,0 +1,10 @@
+device=Intel(R) Arc(TM) Pro B70 Graphics driver=1.15.39122
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=2.38419e-07
+rms_norm count=903 max_abs=2.38419e-07
+softmax_masked count=903 max_abs=1.11759e-08
+linear_100_device_us=1357
+linear_bias count=91 max_abs=4.29153e-06
+linear_no_bias count=91 max_abs=4.29153e-06
+PASS native Intel primitive parity; model/RPC not implemented
