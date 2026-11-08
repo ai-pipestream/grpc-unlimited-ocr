@@ -9,6 +9,8 @@
 
 #include "check.h"
 #include "fixture_content.h"
+#include "image/page_preprocess.h"
+#include "model_document_checks.h"
 #include "output_helpers.h"
 #include "service/model_engine.h"
 #include "service_helpers.h"
@@ -63,6 +65,7 @@ struct Snapshot {
   std::string raw;
   std::vector<std::uint32_t> token_ids;
   std::vector<std::string> blocks;
+  std::vector<std::string> documents;
   bool operator==(const Snapshot&) const = default;
 };
 std::uint64_t anonymous_bytes() {
@@ -93,8 +96,15 @@ Snapshot parse(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrService
   int fragments = 0, token_pages = 0;
   bool complete = false;
   Snapshot result;
+  const auto image = decode_image({reinterpret_cast<const std::uint8_t*>(png.data()), png.size()});
+  std::vector<output::PageGeometry> geometry;
+  for (int p = 1; p <= pages; ++p)
+    geometry.push_back(
+        {static_cast<unsigned>(p), static_cast<unsigned>(image.width), static_cast<unsigned>(image.height)});
+  model_docs::StreamChecks document_checks(geometry);
   std::vector<std::vector<v1::Block>> blocks(static_cast<std::size_t>(pages + 1));
   while (stream->Read(&event)) {
+    document_checks.observe(event);
     require(!event.has_page_failure(), "no page failure: " + event.page_failure().detail());
     if (event.has_tokens()) {
       ++token_pages;
@@ -123,6 +133,9 @@ Snapshot parse(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrService
   require(stream->Finish().ok() && complete && fragments == pages && token_pages == pages,
           "complete typed stream without client half-close");
   for (int p = 1; p <= pages; ++p) golden_content(blocks[static_cast<std::size_t>(p)], static_cast<std::uint32_t>(p));
+  std::vector<v1::Block> all_blocks;
+  for (int p = 1; p <= pages; ++p) all_blocks.insert(all_blocks.end(), blocks[p].begin(), blocks[p].end());
+  result.documents = document_checks.finish(all_blocks);
   idle(svc);
   std::println("RPC pages={} total_s={:.6f} rss_anon_bytes={}", pages,
                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(), anonymous_bytes());

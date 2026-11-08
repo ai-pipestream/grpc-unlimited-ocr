@@ -135,7 +135,7 @@ add_executable(grpc-unlimited-ocr-server src/server_main.cpp)
 target_link_libraries(grpc-unlimited-ocr-server PRIVATE uocr_model_engine grpc++_reflection uocr_flags)
 
 if(BUILD_TESTING)
-  foreach(test_name block_parser_test block_fuzz_test html_table_test document_fold_test lossless_test
+  foreach(test_name block_parser_test block_fuzz_test html_table_test document_fold_test model_document_checks_test lossless_test
                     service_test config_test)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_link_libraries(${test_name} PRIVATE uocr_service uocr_flags)
