@@ -91,6 +91,21 @@ Tensor IntelDecoder::embed(const std::vector<std::int64_t>& ids) const {
   return Tensor({n, dims_.hidden}, out.download());
 }
 
+void IntelDecoder::reset_request_state() noexcept {
+  // Allocation failures can leave a partially grown cache. Drain pending copies
+  // before releasing either old or replacement storage; preserve model weights.
+  try {
+    ctx_.synchronize();
+  } catch (...) {
+    // Cleanup must preserve the original inference exception.
+  }
+  cache_.clear();
+  block_min_ = Array();
+  block_max_ = Array();
+  prompt_blocks_ = capacity_ = capacity_blocks_ = length_ = 0;
+  one_coord_ = {};
+}
+
 void IntelDecoder::reserve(std::int64_t keys) {
   if (keys <= capacity_) return;
   const std::int64_t width = dims_.heads * dims_.head_dim;

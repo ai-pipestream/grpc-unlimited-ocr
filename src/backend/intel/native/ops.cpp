@@ -23,34 +23,28 @@ void silu_mul(const Context& c, float* x, const float* u, std::int64_t n) {
   each(c, n, [=](auto i) { x[i] = x[i] / (1 + sycl::exp(-x[i])) * u[i]; });
 }
 namespace {
-void norm(const Context& c, float* x, const float* w, const float* b, std::int64_t rows, std::int64_t cols, float eps,
-          int mode) {
+void norm(const Context& c, float* x, const float* w, std::int64_t rows, std::int64_t cols, float eps, bool router) {
   each(c, rows, [=](auto r) {
     float* p = x + r * cols;
-    float sum = 0, sq = 0;
+    float sq = 0;
     for (std::int64_t j = 0; j < cols; ++j) {
-      if (mode == 2 && !sycl::isfinite(p[j])) p[j] = 0;
-      sum += p[j];
+      if (router && !sycl::isfinite(p[j])) p[j] = 0;
       sq += p[j] * p[j];
     }
-    const float mean = mode == 0 ? sum / static_cast<float>(cols) : 0;
-    const float inv = sycl::rsqrt(sycl::fmax(sq / static_cast<float>(cols) - mean * mean, 0.0f) + eps);
+    const float inv = sycl::rsqrt(sycl::fmax(sq / static_cast<float>(cols), 0.0f) + eps);
     for (std::int64_t j = 0; j < cols; ++j) {
-      float v = (p[j] - mean) * inv;
-      if (mode == 2) v = sycl::clamp(v, -1e4f, 1e4f);
-      p[j] = mode == 0 ? v * w[j] + b[j] : mode == 1 ? v * w[j] : sycl::clamp(v * (1 + w[j]), -1e4f, 1e4f);
+      float v = p[j] * inv;
+      if (router) v = sycl::clamp(v, -1e4f, 1e4f);
+      p[j] = router ? sycl::clamp(v * (1 + w[j]), -1e4f, 1e4f) : v * w[j];
     }
   });
 }
 }  // namespace
-void layer_norm(const Context& c, float* x, const float* w, const float* b, std::int64_t r, std::int64_t n, float e) {
-  norm(c, x, w, b, r, n, e, 0);
-}
 void rms_norm(const Context& c, float* x, const float* w, std::int64_t r, std::int64_t n, float e) {
-  norm(c, x, w, nullptr, r, n, e, 1);
+  norm(c, x, w, r, n, e, false);
 }
 void router_norm(const Context& c, float* x, const float* w, std::int64_t r, std::int64_t n, float e) {
-  norm(c, x, w, nullptr, r, n, e, 2);
+  norm(c, x, w, r, n, e, true);
 }
 void softmax_rows(const Context& c, float* x, std::int64_t rows, std::int64_t cols) {
   each(c, rows, [=](auto r) {

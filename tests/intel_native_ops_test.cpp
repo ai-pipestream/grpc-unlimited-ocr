@@ -145,6 +145,20 @@ int main() {
         for (int j = 0; j < 3; ++j) vt.row(j)[i] = v.row(i)[j];
       expect("gemm_nn", max_rel(dout.download(), ref::linear(p, vt)), 1e-5);
     }
+    for (const std::int64_t width : {2, 768, 1024}) {
+      Tensor x({3, width}), w({width}, 1), b({width}, 0);
+      for (std::int64_t row = 0; row < 3; ++row)
+        for (std::int64_t col = 0; col < width; ++col)
+          x.row(row)[col] = row == 0   ? 10000.0f + static_cast<float>(col % 2)
+                            : row == 1 ? -10000.0f + static_cast<float>(col % 7) / 64
+                                       : 10000.0f;
+      Tensor want = x;
+      ref::layer_norm(want, w, b, 1e-6f);
+      auto dx = up(ctx, x), dw = up(ctx, w), db = up(ctx, b);
+      cu::layer_norm(ctx, dx.f32(), dw.f32(), db.f32(), 3, width, 1e-6f);
+      std::println("offset LayerNorm width={}", width);
+      expect("offset low-variance layer_norm", max_rel(dx.download(), want), 1e-5);
+    }
     {  // norms and activations
       const Tensor x = random({9, 300}), w = random({300}), b = random({300});
       Tensor want = x;

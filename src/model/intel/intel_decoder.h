@@ -29,10 +29,12 @@ class IntelDecoder final : public DecoderModel {
   std::vector<float> step(std::int64_t token, RopeCoord coord, std::int64_t query_page,
                           const BlockPages& prompt_blocks) override;
   std::int64_t block_size() const override { return router_.block_size; }
+  void reset_request_state() noexcept override;
 
   static RouterParams default_router_params();
 
  private:
+  friend struct IntelDecoderTestAccess;
   struct Expert {
     DeviceWeight gate, up, down;
   };

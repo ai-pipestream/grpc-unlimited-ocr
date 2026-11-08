@@ -3,6 +3,17 @@
 2026-11-08: native model implemented; RPC qualification and controlled
 performance tests remain open. This branch is not ready for release.
 
+The results below belong to the earlier model checkpoint. Independent review
+then found partial cache growth could retain allocations after failure, and
+LayerNorm lost variance on large-offset inputs. The current correctness batch
+adds the parent generator exception guard, an idempotent native cache reset,
+and shifted, centered LayerNorm in a source compiled with precise FP.
+New native failure/recovery and offset-row gates are awaiting device execution.
+The first centered-kernel retry failed at width 768 under default FP; setting
+precise FP for the entire library then failed the existing position-table
+gate. Both RED logs are retained. Precise FP is now restricted to LayerNorm;
+no oracle tolerance changed. Native/server builds and 23 CPU-only tests pass.
+
 `UOCR_WITH_INTEL=ON` provides `intel-gpu` through Engine and uocr-run.
 The selector accepts Intel Level Zero GPUs. CPU fallback is absent.
 Weights stay in upstream safetensors; matrices use bf16 and accumulation
