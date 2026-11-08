@@ -47,11 +47,17 @@ The complete retry took 3m35.6s under host load above 100 on 32 logical CPUs.
 These timings do not establish controlled throughput. Earlier historical
 runs recorded 7.67/7.73 decode tokens/s. Final performance work remains open.
 
-The common RPC test comes from 0c7df82890c8a74c22ac3b7e38ec44f71681ae99.
-It covers repeated page requests and cancellation; recovery calls the
-service core directly. `intel_native_rpc_test` adds recovery through gRPC,
-3 cancellation cycles and process memory checks. Neither RPC test has run
-on Intel at this checkpoint. The isolated service build continues.
+The common RPC test includes d978a13a4dea8dd23ee8a7d5c4efb99323f1ed11:
+6 repeated requests and 3 cancellation/recovery cycles through loopback TCP.
+`intel_native_rpc_test` adds full golden content and geometry checks for
+every page, exact token/text/block repeat identity and process memory checks.
+Neither RPC test has run on Intel at this checkpoint. The isolated service
+build continues.
+
+The common harness also accepts `--cancel-only` from 48abee7. This has not
+been used to skip the initial Intel request gate. The private golden checker
+passes deliberate extra-text, changed-label, displaced-box and missing-block
+mutations on the host. That checks assertions, not GPU inference.
 
 ## Commands
 
@@ -68,6 +74,11 @@ scripts/qualify-intel.sh build-intel rpc /path/to/unlimited-ocr-2
 
 A scheduling grant is required before a GPU command. The script uses a
 nonblocking lock, hash checks and finite timeouts. A skipped test fails the
-script. `-DUOCR_WITH_SERVER=OFF` omits gRPC for standalone model testing.
+script. Full-model modes require the `intel_memory_check` target, built when
+Level Zero Sysman headers and loader are available. It refuses missing or
+ambiguous telemetry and requires 12 GiB free. RPC mode runs the common
+request/recovery gate followed by the private golden and memory gate, with
+one model instance at a time and a 30-minute limit per executable.
+`-DUOCR_WITH_SERVER=OFF` omits gRPC for standalone model testing.
 The service accepts `GRPC_UOCR_BACKEND=intel-gpu` with bf16 precision and
 `GRPC_UOCR_MODELS_DIR`. The runner accepts `--backend intel-gpu --weights bf16`.
