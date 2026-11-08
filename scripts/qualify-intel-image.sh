@@ -10,6 +10,10 @@ trap 'result=$?; printf "IMAGE_GATE mode=%s exit=%s utc=%s\n" "$mode" "$result" 
 date -u +%FT%TZ
 uname -a
 docker version
+# Disk/memory checks and model bind mounts refer to this host. Do not silently
+# send a scheduled build or GPU run to a different daemon via Docker context.
+daemon_endpoint=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
+[[ $daemon_endpoint == unix://* ]] || { echo 'Run on the scheduled Linux host with its local Docker daemon'; exit 64; }
 case "$mode" in
   build)
     : "${UOCR_IMAGE_BUILD_SLOT_GRANTED:?set only after the shared heavy-build slot is granted}"
