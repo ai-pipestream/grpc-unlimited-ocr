@@ -64,11 +64,11 @@ id<MTLCommandBuffer> Context::Impl::commands() {
   return command;
 }
 void Context::Impl::finish() {
-  if (failure) std::rethrow_exception(failure);
   if (!command) {
     allocated -= retired_bytes;
     retired_bytes = 0;
     retired.clear();
+    if (failure) std::rethrow_exception(failure);
     return;
   }
   auto submitted = command;
@@ -79,10 +79,10 @@ void Context::Impl::finish() {
   allocated -= retired_bytes;
   retired_bytes = 0;
   retired.clear();
-  if (submitted.status != MTLCommandBufferStatusCompleted) {
+  if (!failure && submitted.status != MTLCommandBufferStatusCompleted) {
     failure = std::make_exception_ptr(std::runtime_error(submitted.error ? submitted.error.localizedDescription.UTF8String : "Metal execution failed"));
-    std::rethrow_exception(failure);
   }
+  if (failure) std::rethrow_exception(failure);
 }
 void dispatch(const Context& ctx, const char* name, std::size_t threads,
               std::initializer_list<const void*> buffers, const Params& params) {
@@ -113,7 +113,14 @@ void dispatch(const Context& ctx, const char* name, std::size_t threads,
   }
 }
 namespace {
-std::size_t element_size(DType t) { return t == DType::kBF16 ? 2 : t == DType::kI64 ? 8 : 4; }
+std::size_t element_size(DType t) {
+  switch (t) {
+    case DType::kF32: return 4;
+    case DType::kBF16: return 2;
+    case DType::kI64: return 8;
+  }
+  throw std::invalid_argument("unsupported Metal array dtype");
+}
 }
 Array::Array(const Context& ctx, DType type, std::int64_t count) : ctx_(&ctx), count_(count), type_(type) {
   if (count <= 0) throw std::invalid_argument("Metal array must be nonempty");
