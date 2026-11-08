@@ -307,6 +307,14 @@ baselines after each backend's phase. Notes per target:
 
 ### 4.5 Apple Silicon
 
+The native backend implementation and qualification gates are documented in
+[metal.md](metal.md). Its current implementation uses Objective-C++ Metal
+API bindings, bf16 stored weights, fp32 activations and accumulation, MPS
+only for GEMM, and explicit per-step command encoding. It does not yet use
+no-copy weight imports or indirect command buffer replay. Hardware claims
+are limited to the [M2 qualification receipt](receipts/metal-m2-20261108.md).
+
+
 There is no off-the-shelf Apple library that loads this model, and the
 ones that come close are runtimes, which this design rules out:
 
@@ -320,9 +328,9 @@ ones that come close are runtimes, which this design rules out:
 
 Unified memory is the Apple advantage: the safetensors shards are
 memory-mapped and handed to Metal as no-copy buffers, so loading is close
-to free and nothing is duplicated. Apple GPUs from M1 take bf16 through
-Metal 3.1 or later; on older OS releases the backend falls back to fp16,
-held to the same parity gate (4.7) before it is allowed.
+to free and nothing is duplicated. The implemented kernels read the original bf16 bits and widen to float,
+including on M2. They never narrow weights to fp16 or silently fall back
+to another backend.
 
 Metal is not reachable from a Linux container on macOS (the fleet already
 found the same for Core ML), so the Apple backend ships as a native macOS

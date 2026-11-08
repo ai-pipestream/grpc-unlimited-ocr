@@ -15,6 +15,12 @@
 #include "weights/architecture.h"
 #include "weights/sharded_weights.h"
 
+#if UOCR_WITH_METAL
+#include "backend/metal/context.h"
+#include "model/metal/metal_decoder.h"
+#include "model/metal/metal_vision.h"
+#endif
+
 #if UOCR_WITH_CUDA
 #include "backend/cuda/context.h"
 #include "model/cuda/cuda_decoder.h"
@@ -140,6 +146,16 @@ class ModelEngine final : public Engine {
       return;
     }
 #endif
+#if UOCR_WITH_METAL
+    if (config_.backend == "metal") {
+      if (config_.weight_format != "bf16") throw std::invalid_argument("Metal requires upstream bf16 weights");
+      metal_ = std::make_unique<metal::Context>(static_cast<int>(config_.device_index));
+      vision_ = std::make_unique<metal::MetalVisionEncoder>(*metal_, *weights_);
+      decoder_ = std::make_unique<metal::MetalDecoder>(*metal_, *weights_);
+      device_ = "metal:" + std::to_string(config_.device_index) + " " + metal::device_info(static_cast<int>(config_.device_index)).name;
+      return;
+    }
+#endif
     throw std::runtime_error("backend " + config_.backend + " is not built into this binary");
   }
 
@@ -149,6 +165,9 @@ class ModelEngine final : public Engine {
   std::unique_ptr<CheckpointWeights> weights_;
 #if UOCR_WITH_CUDA
   std::unique_ptr<cuda::Context> cuda_;  // declared before the models: device arrays go first
+#endif
+#if UOCR_WITH_METAL
+  std::unique_ptr<metal::Context> metal_;
 #endif
   std::unique_ptr<VisionModel> vision_;
   std::unique_ptr<Decoder> reference_decoder_;
