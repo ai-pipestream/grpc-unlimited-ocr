@@ -53,9 +53,20 @@ class ObservedVision final : public VisionModel {
     auto result = vision_.encode_view(image);
     ctx_.synchronize();
     for (float v : result.span()) require(std::isfinite(v), "vision output is finite");
-    if (first_features.empty())
+    if (first_features.empty()) {
+      const std::filesystem::path path = UOCR_GOLDENS "/quickstart-p2/projector.f32";
+      const auto bytes = std::filesystem::file_size(path);
+      require(bytes > 0 && bytes % sizeof(float) == 0, "reference vision feature file shape");
+      std::vector<float> expected(bytes / sizeof(float));
+      std::ifstream reference(path, std::ios::binary);
+      reference.read(reinterpret_cast<char*>(expected.data()), static_cast<std::streamsize>(bytes));
+      require(reference.good(), "complete reference vision features read");
+      const auto error = intel_testing::finite_relative_error(result.span(), expected);
+      std::println("VISION upstream_fp32_relative_error={:.9g}", error);
+      // Upstream bf16 differs from its fp32 features by 0.057 on this page.
+      require(error < 5.8e-2, "real vision matches upstream at its bf16 feature tolerance");
       first_features.assign(result.span().begin(), result.span().end());
-    else {
+    } else {
       const auto drift = intel_testing::finite_relative_error(result.span(), first_features);
       std::println("VISION repeated relative_error={:.9g}", drift);
       require(drift == 0, "vision features bitwise deterministic across requests");
