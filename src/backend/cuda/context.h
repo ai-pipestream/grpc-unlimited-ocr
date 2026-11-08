@@ -35,6 +35,9 @@ class Context {
   Context& operator=(const Context&) = delete;
 
   void synchronize() const;
+  // Conservative admission check, not an allocation cap or peak guarantee.
+  // On integrated GPUs also accounts for the container's shared-memory limit.
+  void require_headroom(std::uint64_t bytes) const;
 
   // Records everything enqueued between the two calls as a graph instead
   // of running it.

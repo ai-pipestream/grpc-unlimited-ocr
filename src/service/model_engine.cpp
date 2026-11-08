@@ -136,6 +136,10 @@ class ModelEngine final : public Engine {
       decoder_ = std::make_unique<cuda::CudaDecoder>(
           *cuda_, *weights_, DecoderDims{}, cuda::CudaDecoder::default_router_params(),
           config_.weight_format == "int8" ? cuda::WeightFormat::kInt8 : cuda::WeightFormat::kBf16);
+      // Weight residency alone is insufficient: the observed 4.4 GiB Orin
+      // profile exhausted its cgroup on the first image. Refuse readiness
+      // without a conservative workspace reserve; this is not a peak bound.
+      cuda_->require_headroom(1ULL << 30);
       device_ = "cuda:" + std::to_string(config_.device_index);
       return;
     }
