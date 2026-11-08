@@ -77,11 +77,16 @@ inline void check_payload(const docv1::Document& doc, const std::vector<v1::Bloc
       require(texts < doc.texts_size(), "text payload present");
       const auto& item = doc.texts(texts);
       const bool title = block.kind() == v1::BLOCK_KIND_TITLE;
-      require((title && item.has_title()) || (!title && item.has_text()), "typed fixture text kind");
-      const auto& base = title ? item.title().base() : item.text().base();
+      const bool section = title && block.has_heading_level() && block.heading_level() > 1;
+      require((section && item.has_section_header()) || (title && !section && item.has_title()) ||
+                  (!title && item.has_text()),
+              "typed fixture text kind");
+      if (section) require(item.section_header().level() == static_cast<int>(block.heading_level()), "heading level");
+      const auto& base = section ? item.section_header().base() : title ? item.title().base() : item.text().base();
       const auto ref = "#/texts/" + std::to_string(texts++);
       check_item(base, ref,
-                 title                                          ? docv1::DOC_ITEM_LABEL_TITLE
+                 section                                        ? docv1::DOC_ITEM_LABEL_SECTION_HEADER
+                 : title                                        ? docv1::DOC_ITEM_LABEL_TITLE
                  : block.kind() == v1::BLOCK_KIND_IMAGE_CAPTION ? docv1::DOC_ITEM_LABEL_CAPTION
                                                                 : docv1::DOC_ITEM_LABEL_TEXT);
       require(base.text() == block.text().text() && base.orig() == block.text().text(), "complete document text");
