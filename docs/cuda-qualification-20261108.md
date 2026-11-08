@@ -27,6 +27,20 @@ explicitly.
 
 ## Results
 
+The strengthened document gate subsequently passed on source
+`f56a222e978dec2ab47f7583d90502f0bce7549e`, incorporating shared checks
+`2e73d3d`, `d75be71` and `bdc9ff7`. Ten host mutations were rejected.
+Both BF16 and INT8 then passed the **full** common TCP matrix: six requests
+with page counts 1, 2, 1, 2, 1, 2, followed by three cancellation/recovery
+cycles. These runs assert typed text, geometry and references in every page
+fragment and the combined document, plus deterministic snapshots across
+repeats and after cancellation. Model math is unchanged from the ownership
+fix and pure-virtual reset interface. No performance comparison is claimed.
+The separate [document-proof archive](qualification/cuda-documents-20261108-receipts.tar.gz)
+and [checksum](qualification/cuda-documents-20261108-receipts.sha256) retain
+the raw logs, source snapshot and exact binary hashes; frozen binaries are
+in `/tmp/uocr-qualified-f56a222/`.
+
 The post-fix full golden passed BF16 and INT8: exact expected text, structure
 and EOS; six boxes with maximum coordinate differences of respectively zero
 and one on the 0..1000 coordinate scale. Generation took 0.835519 and
