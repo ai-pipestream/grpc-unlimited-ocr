@@ -1,0 +1,9 @@
+source revision: 410b20f61ff2e35c08113dc1fde9a509dd4667a6
+measured whole-page MPS encodes: 53264
+derived decode MPS encodes: 171 * 263 = 44973 (84.43 percent of measured whole-page count)
+derived decode product calls / MPS multiplication objects: 8037
+derived decode matrix wrappers: 134919
+derived decode MTLBuffer allocations excluding cache growth: 171 * 156 = 26676
+derived decode native kernels: 171 * 360 = 61560
+derived per-step pending increments: 407; predicted submit/waits at 64 plus final read: 7
+Assumptions: default architecture, one-row decode, no cache growth, no cap pressure, no error; not measured timing.

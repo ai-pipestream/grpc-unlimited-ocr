@@ -1,0 +1,4 @@
+c++ (Ubuntu 15.3.0-4ubuntu1) 15.3.0
+Parent snapshot 2564252661e14d9a6f5f7fc98fedf3fa78a8765b
+Flags: -std=c++23 -Wall -Wextra -Wnon-virtual-dtor -Wconversion -Wno-sign-conversion -Werror -DUOCR_WITH_METAL=1 -DUOCR_WITH_INTEL=0 -DUOCR_WITH_CUDA=0
+PASS: runner, Metal model/weight adapters and engine host syntax; no native Apple compile claim
