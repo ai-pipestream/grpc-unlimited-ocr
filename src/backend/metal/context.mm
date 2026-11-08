@@ -2,11 +2,18 @@
 #include "tensor/dtype.h"
 #include "metal_source.h"
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <stdexcept>
 #include <utility>
 
 namespace uocr::metal {
+namespace {
+struct EndEncoding {
+  id<MTLComputeCommandEncoder> encoder;
+  ~EndEncoding() { [encoder endEncoding]; }
+};
+}
 int device_count() { @autoreleasepool { return static_cast<int>(MTLCopyAllDevices().count); } }
 DeviceInfo device_info(int index) {
   @autoreleasepool {
@@ -89,6 +96,12 @@ void dispatch(const Context& ctx, const char* name, std::size_t threads,
   if (!threads) return;
   @autoreleasepool {
     auto& p = ctx.impl();
+    // Reject invalid pointers before opening an encoder. ARC releasing an
+    // encoder does not close it, so a bounds error must not leave one active.
+    if (buffers.size() > 8) throw std::invalid_argument("Metal buffer slots exceed scalar ABI");
+    std::array<Binding, 8> bindings{};
+    std::size_t count = 0;
+    for (auto ptr : buffers) bindings[count++] = p.binding(ptr);
     auto& pipeline = p.pipelines[name];
     if (!pipeline) {
       auto function = [p.library newFunctionWithName:@(name)];
@@ -97,17 +110,19 @@ void dispatch(const Context& ctx, const char* name, std::size_t threads,
       if (!pipeline) throw std::runtime_error(error ? error.localizedDescription.UTF8String : name);
     }
     if (pipeline.threadExecutionWidth != 32) throw std::runtime_error("Metal SIMD width must be 32");
-    auto encoder = [p.commands() computeCommandEncoder];
-    [encoder setComputePipelineState:pipeline];
-    NSUInteger slot = 0;
-    for (auto ptr : buffers) {
-      const auto b = p.binding(ptr);
-      [encoder setBuffer:b.buffer offset:b.offset atIndex:slot++];
+    {
+      auto encoder = [p.commands() computeCommandEncoder];
+      if (!encoder) throw std::runtime_error("Metal compute encoder allocation failed");
+      const EndEncoding end{encoder};
+      [encoder setComputePipelineState:pipeline];
+      for (std::size_t slot = 0; slot < count; ++slot) {
+        const auto& b = bindings[slot];
+        [encoder setBuffer:b.buffer offset:b.offset atIndex:slot];
+      }
+      [encoder setBytes:&params length:sizeof(params) atIndex:8];
+      const auto group = std::min<NSUInteger>(256, pipeline.maxTotalThreadsPerThreadgroup);
+      [encoder dispatchThreads:MTLSizeMake(threads, 1, 1) threadsPerThreadgroup:MTLSizeMake(group, 1, 1)];
     }
-    [encoder setBytes:&params length:sizeof(params) atIndex:8];
-    const auto group = std::min<NSUInteger>(256, pipeline.maxTotalThreadsPerThreadgroup);
-    [encoder dispatchThreads:MTLSizeMake(threads, 1, 1) threadsPerThreadgroup:MTLSizeMake(group, 1, 1)];
-    [encoder endEncoding];
     ++p.kernels;
     if (++p.pending >= 64) p.finish();
   }
