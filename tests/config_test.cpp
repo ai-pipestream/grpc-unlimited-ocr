@@ -14,6 +14,16 @@ int main() {
     require(defaults.page_window == 10 && defaults.ngram_size == 35, "upstream defaults");
     require(defaults.documents_in_flight == 1, "one document at a time by default");
     require(defaults.transport_idle_ms == 30000, "transport idle default");
+    require(defaults.device_memory_cap == 0, "device budget defaults to backend capacity policy");
+    ::setenv("GRPC_UOCR_BACKEND", "intel-gpu", 1);
+    ::setenv("GRPC_UOCR_DEVICE_MEMORY_CAP", "12884901888", 1);
+    require(load_config_from_env().device_memory_cap == (12ULL << 30), "device budget retains 64-bit bytes");
+    for (const auto* invalid : {"-1", "12GiB", "549755813889", "18446744073709551616"}) {
+      ::setenv("GRPC_UOCR_DEVICE_MEMORY_CAP", invalid, 1);
+      require_throws([] { load_config_from_env(); }, "invalid device budget rejected");
+    }
+    ::unsetenv("GRPC_UOCR_DEVICE_MEMORY_CAP");
+    ::unsetenv("GRPC_UOCR_BACKEND");
     ::setenv("GRPC_UOCR_TRANSPORT_IDLE_MS", "150", 1);
     require(load_config_from_env().transport_idle_ms == 150, "transport idle override");
     ::setenv("GRPC_UOCR_TRANSPORT_IDLE_MS", "0", 1);
