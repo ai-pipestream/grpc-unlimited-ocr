@@ -17,7 +17,7 @@ constexpr float kClipEps = 1e-5f;
 Array f32(const Context& ctx, std::int64_t n) { return Array(ctx, DType::kF32, n); }
 
 void apply(const Context& ctx, const Array& x, std::int64_t rows, const DeviceMatrix& w, const Array* bias, Array& y) {
-  linear(ctx, x.f32(), rows, w.cols, w.data.bf16(), w.rows, bias != nullptr ? bias->f32() : nullptr, y.f32());
+  linear_fp32(ctx, x.f32(), rows, w.cols, w.data.bf16(), w.rows, bias != nullptr ? bias->f32() : nullptr, y.f32());
 }
 
 // Window layout for a g x g grid: for each window slot the source row (or

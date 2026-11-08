@@ -25,6 +25,16 @@ void matmul(const Context& ctx, const void* a, const void* b, float* c, const dn
                            {{DNNL_ARG_SRC, am}, {DNNL_ARG_WEIGHTS, bm}, {DNNL_ARG_DST, cm}, {DNNL_ARG_SCRATCHPAD, sm}});
 }
 }  // namespace
+void linear_fp32(const Context& ctx, const float* x, std::int64_t m, std::int64_t k, const std::uint16_t* w,
+                 std::int64_t n, const float* bias, float* y) {
+  // Keep upstream bf16 weights resident; widen only this GEMM's matrix on
+  // the device. Vision inputs retain fp32 precision between projections.
+  Array weights(ctx, DType::kF32, n * k);
+  auto* expanded = weights.f32();
+  each(ctx, n * k, [=](auto i) { expanded[i] = wide(w[i]); });
+  matmul(ctx, x, expanded, y, {{m, k}, DT::f32, {k, 1}}, {{k, n}, DT::f32, {1, k}}, {{m, n}, DT::f32, {n, 1}});
+  if (bias) add_rows(ctx, y, bias, m, n);
+}
 void linear(const Context& ctx, const float* x, std::int64_t m, std::int64_t k, const std::uint16_t* w, std::int64_t n,
             const float* bias, float* y) {
   if (m == 1) {
