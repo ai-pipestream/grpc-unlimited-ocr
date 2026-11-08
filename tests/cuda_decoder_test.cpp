@@ -139,6 +139,21 @@ void compare(cuda::WeightFormat format, double tolerance) {
       require(e < tolerance, "decode logits agree");
     }
 
+    // Reuse an existing captured step with a different prompt's routing
+    // arrays, without growing capacity or recreating the model.
+    for (const auto& image_lengths : {std::vector<std::int64_t>{7}, std::vector<std::int64_t>{12, 12}}) {
+      const auto next_prompt = build_prompt(image_lengths);
+      const auto next_embeds = ref.embed(next_prompt);
+      const auto next_layout = layout_prompt(next_prompt);
+      const auto next_blocks = block_image_pages(next_layout, rp.block_size);
+      require(rel(dev.prefill(next_embeds, next_layout), ref.prefill(next_embeds, next_layout)) < tolerance,
+              "changed-layout prefill agrees");
+      DecodeState next_state(next_layout, next_prompt);
+      const auto next_coord = next_state.advance(7);
+      require(rel(dev.step(7, next_coord, next_state.query_page(), next_blocks),
+                  ref.step(7, next_coord, next_state.query_page(), next_blocks)) < tolerance,
+              "captured step uses current request routing arrays");
+    }
     dev.reset_request_state();
     ctx.synchronize();
     const auto model_bytes = cuda::device_info(0).pool_used_bytes;

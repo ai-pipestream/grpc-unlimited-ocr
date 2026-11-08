@@ -305,6 +305,9 @@ std::vector<float> CudaDecoder::run(Array& x, std::int64_t rows, std::int64_t fi
 }
 
 std::vector<float> CudaDecoder::prefill(const Tensor& embeds, const PromptLayout& layout) {
+  // The captured step contains this prompt's routing pointers and block
+  // count. Capacity reuse does not make those captures valid for a new page.
+  graph_.reset();
   length_ = 0;
   const std::int64_t s = embeds.dim(0);
   const BlockPages blocks = block_image_pages(layout, router_.block_size);
