@@ -16,6 +16,7 @@ struct Config {
   // ones this build carries are accepted.
   std::string backend = "cuda";
   std::uint32_t device_index = 0;
+  std::uint64_t device_memory_cap = 0;
   // bf16 or int8 on CUDA; the reference backend requires fp32.
   std::string weight_format = "bf16";
   std::string models_dir = "/models";
