@@ -14,6 +14,7 @@ int main() {
     for (const auto& page : pages) {
       auto page_blocks = parse_whole(read_text(std::string(UOCR_GOLDENS) + "/quickstart-p2/output_raw.txt").substr(6));
       for (auto& block : page_blocks) block.set_page_no(page.page_no);
+      if (page.page_no == 2) page_blocks.front().set_heading_level(2);
       blocks.insert(blocks.end(), page_blocks.begin(), page_blocks.end());
       events.emplace_back().mutable_tokens()->set_page_no(page.page_no);
       auto* fragment = events.emplace_back().mutable_page_document();
