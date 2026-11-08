@@ -14,6 +14,8 @@
 namespace uocr::cuda {
 
 struct Context::Impl {
+  ~Impl() noexcept;
+  std::shared_ptr<OwnershipTestState> test;
   int device = 0;
   cudaStream_t stream = nullptr;
   cublasHandle_t blas = nullptr;

@@ -5,6 +5,7 @@
 // against kernels built by nvcc without sharing any CUDA headers.
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,9 +30,17 @@ DeviceInfo device_info(int index);
 // op runs on this stream in order; host reads synchronise explicitly.
 class Graph;
 
+// Explicit test-only injection, never selected by production configuration.
+// Indices: stream, BLAS, BLASLt, workspace, BLAS workspace, graph, graph exec.
+struct OwnershipTestState {
+  std::array<int, 7> acquired{};
+  std::array<int, 7> released{};
+  int fail_after = -1;
+};
+
 class Context {
  public:
-  explicit Context(int device = 0);
+  explicit Context(int device = 0, std::shared_ptr<OwnershipTestState> test = {});
   ~Context();
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;
@@ -41,6 +50,7 @@ class Context {
   // On integrated GPUs also accounts for the container's shared-memory limit.
   void require_headroom(std::uint64_t bytes) const;
   void abort_capture() const noexcept;
+  bool capture_active_for_testing() const;
   // Deterministic allocation-failure tests without exhausting the shared GPU.
   // -1 disables injection; 0 fails the next Array allocation.
   void fail_allocation_after_for_testing(std::int64_t successful_allocations) const noexcept;
