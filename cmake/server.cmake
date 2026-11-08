@@ -1,43 +1,56 @@
 # The gRPC service, included from the top-level CMakeLists when
 # UOCR_WITH_SERVER is on.
 
-set(gRPC_INSTALL OFF CACHE BOOL "" FORCE)
-set(gRPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(gRPC_BUILD_CSHARP_EXT OFF CACHE BOOL "" FORCE)
-foreach(plugin CSHARP NODE OBJECTIVE_C PHP PYTHON RUBY)
-  set(gRPC_BUILD_GRPC_${plugin}_PLUGIN OFF CACHE BOOL "" FORCE)
-endforeach()
-set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
-set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-# The fetched re2 and zlib register their own tests with CTest; keep them
-# out of ours.
-set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(grpc
-  GIT_REPOSITORY https://github.com/grpc/grpc.git
-  GIT_TAG v1.83.0
-  GIT_SHALLOW TRUE
-  GIT_SUBMODULES_RECURSE TRUE
-  SYSTEM)
-# An ASan build instruments gRPC, protobuf and abseil too: their inline
-# code is compiled into our objects with ASan's string and container
-# annotations, and an uninstrumented library writing the same objects
-# reports false use-after-poison and container-overflow errors. Only
-# address: abseil does not compile under GCC's -fsanitize=undefined.
-if(UOCR_SANITIZE MATCHES "address")
-  set(UOCR_SAVED_C_FLAGS "${CMAKE_C_FLAGS}")
-  set(UOCR_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  set(UOCR_SAVED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
-  string(APPEND CMAKE_C_FLAGS " -fsanitize=address -fno-omit-frame-pointer")
-  string(APPEND CMAKE_CXX_FLAGS " -fsanitize=address -fno-omit-frame-pointer")
-  string(APPEND CMAKE_EXE_LINKER_FLAGS " -fsanitize=address")
-endif()
-FetchContent_MakeAvailable(grpc)
-if(UOCR_SANITIZE MATCHES "address")
-  set(CMAKE_C_FLAGS "${UOCR_SAVED_C_FLAGS}")
-  set(CMAKE_CXX_FLAGS "${UOCR_SAVED_CXX_FLAGS}")
-  set(CMAKE_EXE_LINKER_FLAGS "${UOCR_SAVED_LINKER_FLAGS}")
+option(UOCR_SYSTEM_GRPC "Use installed native gRPC/protobuf tools and libraries" OFF)
+if(UOCR_SYSTEM_GRPC)
+  find_package(Protobuf CONFIG REQUIRED)
+  find_package(gRPC CONFIG REQUIRED)
+  add_library(grpc++ ALIAS gRPC::grpc++)
+  add_library(grpc++_reflection ALIAS gRPC::grpc++_reflection)
+  add_executable(protoc ALIAS protobuf::protoc)
+  add_executable(grpc_cpp_plugin ALIAS gRPC::grpc_cpp_plugin)
+  find_path(UOCR_PROTOBUF_INCLUDE_DIR google/protobuf/empty.proto REQUIRED)
+else()
+  set(gRPC_INSTALL OFF CACHE BOOL "" FORCE)
+  set(gRPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(gRPC_BUILD_CSHARP_EXT OFF CACHE BOOL "" FORCE)
+  foreach(plugin CSHARP NODE OBJECTIVE_C PHP PYTHON RUBY)
+    set(gRPC_BUILD_GRPC_${plugin}_PLUGIN OFF CACHE BOOL "" FORCE)
+  endforeach()
+  set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+  set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  # The fetched re2 and zlib register their own tests with CTest; keep them
+  # out of ours.
+  set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(grpc
+    GIT_REPOSITORY https://github.com/grpc/grpc.git
+    GIT_TAG v1.83.0
+    GIT_SHALLOW TRUE
+    GIT_SUBMODULES_RECURSE TRUE
+    SYSTEM)
+  # An ASan build instruments gRPC, protobuf and abseil too: their inline
+  # code is compiled into our objects with ASan's string and container
+  # annotations, and an uninstrumented library writing the same objects
+  # reports false use-after-poison and container-overflow errors. Only
+  # address: abseil does not compile under GCC's -fsanitize=undefined.
+  if(UOCR_SANITIZE MATCHES "address")
+    set(UOCR_SAVED_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(UOCR_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(UOCR_SAVED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    string(APPEND CMAKE_C_FLAGS " -fsanitize=address -fno-omit-frame-pointer")
+    string(APPEND CMAKE_CXX_FLAGS " -fsanitize=address -fno-omit-frame-pointer")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -fsanitize=address")
+  endif()
+  FetchContent_MakeAvailable(grpc)
+  if(UOCR_SANITIZE MATCHES "address")
+    set(CMAKE_C_FLAGS "${UOCR_SAVED_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${UOCR_SAVED_CXX_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${UOCR_SAVED_LINKER_FLAGS}")
+  endif()
+
+  set(UOCR_PROTOBUF_INCLUDE_DIR "${protobuf_SOURCE_DIR}/src")
 endif()
 
 # Generated code. protoc and grpc_cpp_plugin are the fetched targets.
@@ -64,7 +77,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${UOCR_GENERATED_DIR}"
   COMMAND $<TARGET_FILE:protoc>
   ARGS --proto_path=${UOCR_PROTO_DIR}
-       --proto_path=${protobuf_SOURCE_DIR}/src
+       --proto_path=${UOCR_PROTOBUF_INCLUDE_DIR}
        --cpp_out=${UOCR_GENERATED_DIR}
        --grpc_out=${UOCR_GENERATED_DIR}
        --plugin=protoc-gen-grpc=$<TARGET_FILE:grpc_cpp_plugin>
@@ -111,6 +124,11 @@ target_compile_definitions(uocr_model_engine PRIVATE UOCR_MANIFEST_SHA256="${UOC
 if(UOCR_WITH_CUDA)
   target_link_libraries(uocr_model_engine PRIVATE uocr_cuda_model)
   target_compile_definitions(uocr_model_engine PRIVATE UOCR_WITH_CUDA=1)
+endif()
+
+if(UOCR_WITH_METAL)
+  target_link_libraries(uocr_model_engine PRIVATE uocr_metal_model)
+  target_compile_definitions(uocr_model_engine PRIVATE UOCR_WITH_METAL=1)
 endif()
 
 add_executable(grpc-unlimited-ocr-server src/server_main.cpp)
