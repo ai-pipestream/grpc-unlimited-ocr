@@ -55,19 +55,34 @@ std::uint64_t Context::memory_cap() const { return impl_->cap; }
 Context::~Context() = default;
 std::uint64_t Context::kernel_submissions() const { return impl_->kernels.load(); }
 std::uint64_t Context::gemm_submissions() const { return impl_->gemms.load(); }
-void Context::synchronize() const { impl_->queue.wait_and_throw(); }
+void Context::synchronize() const {
+  impl_->queue.wait_and_throw();
+  if (impl_->cleanup_failed.load()) throw std::runtime_error("Intel device cleanup failed; context cannot be reused");
+}
+void Context::fail_allocation_after_for_testing(std::int64_t attempts) const {
+  if (attempts < -1) throw std::invalid_argument("allocation fault countdown");
+  impl_->allocation_countdown.store(attempts);
+}
 std::string Context::device_name() const { return impl_->queue.get_device().get_info<sycl::info::device::name>(); }
 Array::Array(const Context& ctx, DType type, std::int64_t count) : ctx_(&ctx), count_(count), type_(type) {
   if (count <= 0 || static_cast<std::uint64_t>(count) > std::numeric_limits<std::size_t>::max() / size_of(type))
     throw std::invalid_argument("invalid device allocation size");
   const auto bytes = static_cast<std::size_t>(count) * size_of(type);
   auto& impl = ctx.impl();
+  if (impl.cleanup_failed.load()) throw std::runtime_error("Intel device cleanup failed; context cannot be reused");
   auto used = impl.allocated.load();
   do {
     if (bytes > impl.cap || used > impl.cap - bytes)
       throw std::runtime_error("Intel device allocation budget exceeded");
   } while (!impl.allocated.compare_exchange_weak(used, used + bytes));
   try {
+    auto remaining = impl.allocation_countdown.load();
+    while (remaining >= 0) {
+      if (impl.allocation_countdown.compare_exchange_weak(remaining, remaining == 0 ? -1 : remaining - 1)) {
+        if (remaining == 0) throw std::bad_alloc();
+        break;
+      }
+    }
     data_ = sycl::malloc_device(bytes, impl.queue);
     if (!data_) throw std::bad_alloc();
   } catch (...) {
@@ -80,9 +95,17 @@ Array::Array(const Context& ctx, DType type, std::int64_t count) : ctx_(&ctx), c
 }
 Array::~Array() {
   if (data_) {
-    ctx_->impl().queue.wait();
-    sycl::free(data_, ctx_->impl().queue);
-    ctx_->impl().allocated.fetch_sub(static_cast<std::size_t>(count_) * size_of(type_));
+    auto& impl = ctx_->impl();
+    try {
+      impl.queue.wait();
+      sycl::free(data_, impl.queue);
+      impl.allocated.fetch_sub(static_cast<std::size_t>(count_) * size_of(type_));
+    } catch (...) {
+      // Do not free potentially busy memory or erase its budget charge after
+      // a driver cleanup failure. Allocation failures remain recoverable;
+      // an unhealthy device context fails closed on subsequent use.
+      impl.cleanup_failed.store(true);
+    }
   }
 }
 Array::Array(Array&& other) noexcept {

@@ -32,6 +32,8 @@ class Context {
   std::uint64_t memory_cap() const;
   std::uint64_t kernel_submissions() const;
   std::uint64_t gemm_submissions() const;
+  // One-shot allocation fault injection; -1 disables it. No effect by default.
+  void fail_allocation_after_for_testing(std::int64_t attempts) const;
   struct Impl;
   Impl& impl() const { return *impl_; }
 

@@ -166,11 +166,13 @@ endif()
 if(UOCR_WITH_INTEL)
   find_package(DNNL CONFIG REQUIRED)
   add_library(uocr_intel_native STATIC
-    src/backend/intel/native/context.cpp src/backend/intel/native/ops.cpp
+    src/backend/intel/native/context.cpp src/backend/intel/native/ops.cpp src/backend/intel/native/layer_norm.cpp
     src/backend/intel/native/gemm.cpp src/backend/intel/native/routing.cpp
     src/backend/intel/native/position_tables.cpp)
   target_include_directories(uocr_intel_native PUBLIC src)
   target_compile_options(uocr_intel_native PRIVATE -fsycl)
+  # Do not reassociate the centered LayerNorm expression back into cancellation.
+  set_source_files_properties(src/backend/intel/native/layer_norm.cpp PROPERTIES COMPILE_OPTIONS "-fp-model=precise")
   target_link_options(uocr_intel_native PUBLIC -fsycl)
   target_link_libraries(uocr_intel_native PUBLIC DNNL::dnnl)
   add_library(uocr_intel_model STATIC src/model/intel/intel_vision.cpp

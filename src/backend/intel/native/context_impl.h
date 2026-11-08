@@ -9,6 +9,8 @@ namespace uocr::intel_native {
 struct Context::Impl {
   std::atomic<std::uint64_t> allocated{0}, peak{0};
   std::atomic<std::uint64_t> kernels{0}, gemms{0};
+  std::atomic<std::int64_t> allocation_countdown{-1};
+  std::atomic<bool> cleanup_failed{false};
   std::uint64_t cap = 0;
   sycl::queue queue;
   dnnl::engine engine;
