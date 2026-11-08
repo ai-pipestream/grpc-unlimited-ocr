@@ -65,6 +65,13 @@ device-memory caps are rejected for CUDA rather than silently ignored.
 
 ## Receipts
 
+The committed [receipt archive](qualification/cuda-20261108-receipts.tar.gz)
+and [SHA256](qualification/cuda-20261108-receipts.sha256) contain retained
+raw test logs, source snapshot, build configuration, model hash checks and
+exact tested binary SHA256 manifest. Extract with `tar -xzf` to inspect.
+Executables, model weights and the unanalyzable CUPTI binary trace are not
+embedded; the importer failure log and external trace location are retained.
+
 `/work/main/grpc-services/hardware-receipts/cuda-20261108/unlimited/` contains
 raw logs, model hashes, build configuration, a source archive and binary
 manifest. Frozen `bbf14dc` binaries are in `/tmp/uocr-qualified-bbf14dc/`;
