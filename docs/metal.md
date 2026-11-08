@@ -43,7 +43,7 @@ GRPC_UOCR_MODELS_DIR=/path/to/unlimited-ocr-2 \
 An unavailable device or unsupported weight format fails startup. There is
 no automatic reference/CPU fallback. `GetServiceInfo` names the selected
 Metal device. The context caps its owned live buffers at the smaller of
-12 GiB and the device's recommended working set; MPS internal resources,
+`GRPC_UOCR_DEVICE_MEMORY_CAP` (12 GiB when unset) and the device's recommended working set; MPS internal resources,
 the checkpoint mappings and host tensors are outside that owned-buffer
 accounting. Process RSS must therefore be measured separately.
 

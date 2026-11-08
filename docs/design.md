@@ -813,6 +813,12 @@ device memory cap, models dir, page window, per-page token cap, max pages and ma
 per stream, buffered-bytes budgets per stream and per server, documents
 in flight.
 
+`GRPC_UOCR_DEVICE_MEMORY_CAP` currently bounds engine-owned device buffers
+on Intel and Metal. Metal defaults to the smaller of 12 GiB and the device
+recommended working set; Intel defaults to 80% of device memory. Vendor
+library allocations and host memory are outside this accounting. Other
+backends reject a nonzero cap rather than silently ignoring it.
+
 A compose overlay keeps it out of the default stack and wires gRParse to
 it only when used:
 

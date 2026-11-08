@@ -154,7 +154,8 @@ class ModelEngine final : public Engine {
 #if UOCR_WITH_METAL
     if (config_.backend == "metal") {
       if (config_.weight_format != "bf16") throw std::invalid_argument("Metal requires upstream bf16 weights");
-      metal_ = std::make_unique<metal::Context>(static_cast<int>(config_.device_index));
+      metal_ = std::make_unique<metal::Context>(static_cast<int>(config_.device_index),
+          config_.device_memory_cap ? config_.device_memory_cap : (12ULL << 30));
       vision_ = std::make_unique<metal::MetalVisionEncoder>(*metal_, *weights_);
       decoder_ = std::make_unique<metal::MetalDecoder>(*metal_, *weights_);
       device_ = "metal:" + std::to_string(config_.device_index) + " " + metal::device_info(static_cast<int>(config_.device_index)).name;

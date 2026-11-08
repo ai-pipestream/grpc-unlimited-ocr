@@ -31,6 +31,17 @@ int main() {
     ::unsetenv("GRPC_UOCR_WEIGHT_FORMAT");
     require(set.max_stream_buffered_bytes == 4 * 4096, "the stream budget follows the page cap");
 
+    ::setenv("GRPC_UOCR_DEVICE_MEMORY_CAP", "1048576", 1);
+    for (const char* backend : {"metal", "intel-gpu"}) {
+      ::setenv("GRPC_UOCR_BACKEND", backend, 1);
+      require(load_config_from_env().device_memory_cap == 1048576, "device buffer cap retained");
+    }
+    for (const char* backend : {"cuda", "cpu", "reference"}) {
+      ::setenv("GRPC_UOCR_BACKEND", backend, 1);
+      require_throws([] { load_config_from_env(); }, "unsupported device cap must not be ignored");
+    }
+    ::unsetenv("GRPC_UOCR_DEVICE_MEMORY_CAP");
+
     ::setenv("GRPC_UOCR_BACKEND", "tpu", 1);
     require_throws([] { load_config_from_env(); }, "an unknown backend is refused");
     ::setenv("GRPC_UOCR_BACKEND", "cuda", 1);
