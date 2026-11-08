@@ -100,7 +100,10 @@ int main(int argc, char** argv) {
                    engine->info().backend, pages,
                    std::chrono::duration<double>(std::chrono::steady_clock::now() - request_start).count());
     };
-    for (const int pages : {1, 2, 1, 2, 1, 2}) verify_rpc(pages);
+    const bool cancel_only = argc == 2 && std::string(argv[1]) == "--cancel-only";
+    if (!cancel_only) {
+      for (const int pages : {1, 2, 1, 2, 1, 2}) verify_rpc(pages);
+    }
     for (int cycle = 0; cycle < 3; ++cycle) {
     grpc::ClientContext context;
     context.set_deadline(std::chrono::system_clock::now() + 20min);
