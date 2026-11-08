@@ -5,16 +5,27 @@ typed layout blocks and per-page `ai.pipestream.document.v1.Document`
 fragments back to the caller. The model runs on a native engine in this
 repo: weights load directly from the upstream safetensors, the forward
 pass is C++. Implemented backends are the fp32 CPU reference and CUDA
-(bf16 and int8). The native Intel SYCL/oneDNN bf16 model path is implemented;
-[qualification status](docs/intel-native.md) lists hardware results and open
-RPC/performance tests. Apple Metal, Hailo offload and int4 remain planned
-in this branch. There is no inference runtime and no
-Python at build or run time.
+(bf16 and int8). Native Intel SYCL/oneDNN and Apple Metal/MPS bf16 model
+backends are also implemented in the accelerator integration. Hailo offload
+and int4 remain planned. There is no inference runtime and no Python at
+build or run time.
 
 **Status:** the reference engine matches the upstream implementation token
 for token, and the CUDA backend runs a page end to end (on an RTX 4080
 SUPER: a historical single-page CLI measurement recorded 0.3 s of prefill
 and about 285 decode tokens per second, not gRPC end-to-end throughput).
+CUDA bf16/int8 have also passed native typed-RPC and cancellation/recovery
+checks on the actual device.
+Intel Arc Pro B70 has passed real-page golden repeats, one/two-page typed
+RPCs, cancellation/recovery and bounded-memory gates; its measured shared-host
+timings and exact source/binary/model pins are in
+[`docs/intel-native.md`](docs/intel-native.md). Apple M2 native golden and
+earlier RPC recovery checks have passed; its stronger final document-payload
+matrix is not claimed here while pending. These native results do not qualify
+container images, a broad corpus, or long-document soak. Intel container
+build/boot/RPC qualification is still pending; see
+[`docs/intel-container.md`](docs/intel-container.md). Nano full-model inference
+is not supported in the tested 4400 MiB profile.
 The gRPC server (`ai.pipestream.unlimitedocr.v1.UnlimitedOcrService`, port
 50073) streams every decode step, the parsed blocks, per-page `Document`
 fragments and the folded `Document`.
@@ -67,14 +78,23 @@ grpcurl -plaintext localhost:50073 ai.pipestream.unlimitedocr.v1.UnlimitedOcrSer
 
 Configuration is `GRPC_UOCR_*` environment variables (see
 [`src/service/config.h`](src/service/config.h)): `LISTEN_ADDRESS`
-(`0.0.0.0:50073`), `BACKEND` (`cuda`, `reference`, `intel-gpu` when built; `metal` and
-`cpu` remain unavailable in this branch), `DEVICE_INDEX`, `WEIGHT_FORMAT` (`bf16`, `int8`),
+(`0.0.0.0:50073`), `BACKEND` (`cuda`, `reference`, `intel-gpu`, or `metal` when
+that backend is built), `DEVICE_INDEX`, `WEIGHT_FORMAT` (`bf16`/`int8` on CUDA,
+`bf16` on Intel/Metal, `fp32` on reference),
 `MODELS_DIR` (`/models`), `PAGE_WINDOW` (10),
 `MAX_TOKENS_PER_PAGE` (20000), `NGRAM_SIZE` (35), `NGRAM_WINDOW` (1024),
 `NGRAM_WINDOW_SINGLE_PAGE` (128), `MAX_PAGES`, `MAX_PAGE_BYTES`,
 `MAX_STREAM_BUFFERED_BYTES`, `MAX_BUFFERED_BYTES` and
 `DOCUMENTS_IN_FLIGHT` (1). The server is built by default;
 `-DUOCR_WITH_SERVER=OFF` builds only the engine (no gRPC).
+Select Intel with `-DUOCR_WITH_INTEL=ON` and a SYCL compiler; the accelerator
+integration builds Metal with `-DUOCR_WITH_METAL=ON` on Apple Silicon.
+Unsupported or unbuilt backends fail startup; `cpu` is not a substitute for
+`reference`. `GRPC_UOCR_DEVICE_MEMORY_CAP` is a byte count enforced by Intel
+and Metal. Zero selects Intel's 80% device-memory limit or Metal's 12 GiB
+default (also bounded by its recommended working set). A nonzero cap on an
+unsupported backend is rejected. Driver/internal-library allocations and
+host memory are outside those owned-buffer budgets.
 
 ## Licence
 
