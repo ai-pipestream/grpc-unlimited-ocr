@@ -1,0 +1,8 @@
+model-00001-of-00002.safetensors: OK
+model-00002-of-00002.safetensors: OK
+model.safetensors.index.json: OK
+tokenizer.json: OK
+tokenizer_config.json: OK
+special_tokens_map.json: OK
+config.json: OK
+generation_config.json: OK
