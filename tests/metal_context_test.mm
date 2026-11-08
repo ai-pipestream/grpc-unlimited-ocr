@@ -4,9 +4,32 @@
 
 using namespace uocr;
 
+void rejected_binding_recovery() {
+  const metal::Context ctx(0, 4096), other(0, 4096);
+  const float value = 0.25f;
+  metal::Array source(ctx, metal::DType::kF32, 1), output(ctx, metal::DType::kF32, 1);
+  metal::Array foreign(other, metal::DType::kF32, 1);
+  source.upload(&value, 1);
+  require_throws([&] { metal::copy(ctx, output.f32(), foreign.f32(), 1); }, "cross-context pointer rejected");
+  require(ctx.impl().command == nil, "rejection did not open a command encoder");
+  metal::copy(ctx, output.f32(), source.f32(), 1);
+  id<MTLCommandBuffer> pending = ctx.impl().command;
+  require_throws([&] { metal::copy(ctx, output.f32(), source.f32() + 1, 1); }, "one-past-end slice rejected");
+  require(ctx.impl().command == pending, "rejection preserves earlier pending work");
+  metal::copy(ctx, output.f32(), source.f32(), 1);
+  require(output.download()[0] == value, "valid dispatch recovers after pointer rejection");
+  require(pending.status == MTLCommandBufferStatusCompleted && !ctx.impl().failure,
+          "pointer rejection did not poison command execution");
+  // Also leave valid work pending after a rejected call: scope destruction
+  // must safely complete it without an unfinished encoder.
+  metal::copy(ctx, output.f32(), source.f32(), 1);
+  require_throws([&] { metal::copy(ctx, output.f32(), foreign.f32(), 1); }, "pending cross-context rejection");
+}
+
 int main() {
   if (metal::device_count() == 0) return skip("no Metal device");
   return run_tests([] {
+    rejected_binding_recovery();
     const metal::Context ctx(0, 4096);
     require_throws([&] { metal::Array invalid(ctx, static_cast<metal::DType>(255), 1); },
                    "unknown dtype rejected before allocation");
