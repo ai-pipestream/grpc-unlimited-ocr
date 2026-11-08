@@ -74,6 +74,12 @@ target_include_directories(uocr_reference SYSTEM PRIVATE ${stb_SOURCE_DIR})
 add_executable(uocr-run tools/uocr_run.cpp)
 target_link_libraries(uocr-run PRIVATE uocr_reference)
 
+# Primitive qualification only; this does not enable a Metal service backend.
+option(UOCR_WITH_METAL "Build native Apple MPS GEMM and its parity gate" OFF)
+if(UOCR_WITH_METAL)
+  include(cmake/metal.cmake)
+endif()
+
 if(BUILD_TESTING)
   foreach(test_name dtype_test safetensors_test architecture_test checkpoint_test ops_test vision_test
                     vision_checkpoint_test page_layout_test router_test logit_policy_test tokenizer_test
