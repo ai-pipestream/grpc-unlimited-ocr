@@ -1,7 +1,43 @@
 # Native Intel model checkpoint
 
-2026-11-08: native model implemented; RPC qualification and controlled
-performance tests remain open. This branch is not ready for release.
+2026-11-08: native model and single-page golden qualified on B70; strict
+multi-page RPC qualification remains RED. This branch is not ready for release.
+
+At native source `a048ced90ffc5fdc7157546756a55250bf6b4690`, the full golden
+passed three repetitions with identical features, all 171 token IDs, text and
+six boxes. Every box matched the upstream single-page golden coordinates.
+Vision feature error was 0.00002694 against the unchanged 0.058 gate. Native
+retained allocation was 6,829,784,464 bytes and peak was 7,079,610,769 bytes,
+under the 12 GiB cap. The final repetition took 26.412 seconds, including
+22.569 seconds of decode (7.577 tokens/s). These are shared-host measurements,
+not controlled throughput benchmarks. The receipt records source and binary
+SHA256, all eight model checks, GPU submissions, timings and process memory.
+
+The common TCP gate then passed six requests alternating one/two pages and
+three in-flight cancellation/admission-release/recovery cycles: 12 completed
+pages, plus three cancelled requests. The private gate passed its single-page
+golden, then rejected the two-page title structure against that single-page
+expectation. The RED receipt is preserved. A subsequent two-page reference
+decoder run, using the committed upstream fp32 projector features, reproduced
+the LEVEL1/LEVEL2 titles and printed text/boxes from Intel. The private gate
+now selects that separate two-page oracle; the single-page oracle and both
+geometry thresholds are unchanged. Its final hardware rerun is pending.
+
+Independent review found that the original RPC harness counted document
+fragments without checking their payloads. `model_document_checks.h` now
+checks unique token/fragment page identities, complete text, pixel geometry,
+body and caption references, and a single complete document. Validated typed
+documents enter the repeat snapshot. Eleven host-only mutations pass,
+including missing/empty/duplicate/swapped payloads, invalid references, text,
+geometry and NaN. The strengthened private hardware gate is still pending.
+
+At test source `5b52adda4e760c03e7bd374d41025811d9c71ee8`, B70 also passed
+injected widening-buffer failure and matmul scratch failure after the
+widening kernel was queued. Both preserved the original allocation exception,
+restored the live-byte baseline, retained unchanged bf16 weights and recovered
+identical projection output on the same context. This is focused fault
+coverage, not a full-model out-of-memory claim. Native model source remains
+unchanged from a048ced.
 
 The results below belong to the earlier model checkpoint. Independent review
 then found partial cache growth could retain allocations after failure, and
@@ -25,7 +61,7 @@ test in `6ffeca7`. Keeping projection inputs in fp32 reduces SAM error to
 0.00001784 and projector error to 0.00002694. Matrices stay bf16 in device
 storage; a temporary GPU widening supplies each vision fp32 GEMM. The decoder
 continues to use bf16 projection inputs. Tiny vision error is now 0.000000373.
-Full golden repeats and RPC qualification of this precision fix remain open.
+Full golden repeats pass; strict multi-page RPC qualification remains open.
 
 `intel_vision_diagnostic` records SAM/projector arrays and finite comparisons;
 it is a diagnostic executable, not a replacement for the qualification gates.
@@ -50,9 +86,9 @@ existing typed protobuf stream remains unchanged.
 `GRPC_UOCR_DEVICE_MEMORY_CAP` limits native USM and explicit matmul scratch.
 Zero chooses 80% of device capacity. Tests select 12 GiB. Driver caches and
 host memory are separate. Prefill cannot be interrupted; decode cancellation
-and recovery still need the real RPC test.
+and admission recovery pass the common real TCP test.
 
-## Actual results
+## Historical checkpoint results (7f2bd2f)
 
 Arc Pro B70, oneAPI 2025.3.3, oneDNN 3.9, krick-1:
 
@@ -83,8 +119,8 @@ The common RPC test includes d978a13a4dea8dd23ee8a7d5c4efb99323f1ed11:
 6 repeated requests and 3 cancellation/recovery cycles through loopback TCP.
 `intel_native_rpc_test` adds full golden content and geometry checks for
 every page, exact token/text/block repeat identity and process memory checks.
-Neither RPC test has run on Intel at this checkpoint. The isolated service
-build continues.
+Neither RPC test had run at the historical checkpoint. Current results are
+listed above; the isolated native/server builds now pass.
 
 The common harness also accepts `--cancel-only` from 48abee7. This has not
 been used to skip the initial Intel request gate. The private golden checker

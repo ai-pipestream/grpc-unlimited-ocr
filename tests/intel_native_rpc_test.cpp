@@ -18,9 +18,27 @@ using namespace uocr;
 using namespace uocr::testing;
 using namespace std::chrono_literals;
 namespace {
-void golden_content(const std::vector<v1::Block>& blocks, std::uint32_t page) {
+std::vector<v1::Block> golden_blocks(std::uint32_t page, int pages) {
+  require(pages == 1 || pages == 2, "known oracle page count");
+  const auto path = std::string(UOCR_GOLDENS) + "/quickstart-p2/" +
+                    (pages == 2 ? "two-page-reference/output_raw.txt" : "output_raw.txt");
+  const auto raw = read_text(path);
+  std::size_t start = 0;
+  std::vector<v1::Block> result;
+  for (int p = 1; p <= pages; ++p) {
+    require(raw.compare(start, 6, "<PAGE>") == 0, "oracle page marker");
+    const auto end = raw.find("<PAGE>", start + 6);
+    require((p == pages) == (end == std::string::npos), "oracle has requested number of pages");
+    if (static_cast<unsigned>(p) == page)
+      result = parse_pieces({raw.substr(start + 6, end == std::string::npos ? end : end - start - 6)}, page);
+    start = end;
+  }
+  require(!result.empty(), "oracle page present");
+  return result;
+}
+void golden_content(const std::vector<v1::Block>& blocks, std::uint32_t page, int pages = 1) {
   check_fixture_content(blocks, page);
-  const auto expected = parse_whole(read_text(std::string(UOCR_GOLDENS) + "/quickstart-p2/output_raw.txt").substr(6));
+  const auto expected = golden_blocks(page, pages);
   require(blocks.size() == expected.size(), "same golden block count");
   for (std::size_t i = 0; i < blocks.size(); ++i) {
     auto actual = blocks[i], want = expected[i];
@@ -60,6 +78,12 @@ void check_golden_assertions() {
   bad = blocks;
   bad.pop_back();
   require_throws([&] { golden_content(bad, 1); }, "missing block rejected");
+  for (unsigned page : {1U, 2U}) {
+    auto two = golden_blocks(page, 2);
+    golden_content(two, page, 2);
+    two.front().set_heading_level(page == 1 ? 2 : 1);
+    require_throws([&] { golden_content(two, page, 2); }, "two-page oracle heading level enforced");
+  }
 }
 struct Snapshot {
   std::string raw;
@@ -132,7 +156,8 @@ Snapshot parse(v1::UnlimitedOcrService::Stub& stub, service::UnlimitedOcrService
   }
   require(stream->Finish().ok() && complete && fragments == pages && token_pages == pages,
           "complete typed stream without client half-close");
-  for (int p = 1; p <= pages; ++p) golden_content(blocks[static_cast<std::size_t>(p)], static_cast<std::uint32_t>(p));
+  for (int p = 1; p <= pages; ++p)
+    golden_content(blocks[static_cast<std::size_t>(p)], static_cast<std::uint32_t>(p), pages);
   std::vector<v1::Block> all_blocks;
   for (int p = 1; p <= pages; ++p) all_blocks.insert(all_blocks.end(), blocks[p].begin(), blocks[p].end());
   result.documents = document_checks.finish(all_blocks);
