@@ -22,6 +22,7 @@ class IntelVisionEncoder final : public VisionModel {
   Tensor encode_view(const Tensor& image) const override;
 
  private:
+  friend struct IntelVisionTestAccess;
   struct SamBlock {
     Array norm1_w, norm1_b, qkv_b, proj_b, norm2_w, norm2_b, lin1_b, lin2_b;
     DeviceMatrix qkv, proj, lin1, lin2;

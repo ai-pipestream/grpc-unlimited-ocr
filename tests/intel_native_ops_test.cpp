@@ -120,6 +120,13 @@ int main() {
         const auto next = dy.download();
         require(intel_testing::finite_relative_error(next, first) == 0, "model GEMM bitwise deterministic repeats");
       }
+      const auto full_input = random({m, k}, 0.1f);
+      dx.upload(full_input.data(), full_input.numel());
+      cu::linear_fp32(ctx, dx.f32(), m, k, dw.bf16(), n, nullptr, dy.f32());
+      const auto full_result = dy.download();
+      expect("vision fp32-input projection", max_rel(full_result, ref::linear(full_input, w)), 2e-5);
+      cu::linear_fp32(ctx, dx.f32(), m, k, dw.bf16(), n, nullptr, dy.f32());
+      require(intel_testing::finite_relative_error(dy.download(), full_result) == 0, "fp32 projection repeat identity");
     }
     {  // fp32 batched products
       const Tensor a = random({2 * 5 * 8}), b = random({2 * 7 * 8});

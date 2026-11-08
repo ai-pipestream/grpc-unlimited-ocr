@@ -10,6 +10,9 @@
 #include "backend/intel/native/context.h"
 
 namespace uocr::intel_native {
+// Native GPU vision projection with fp32 inputs and upstream bf16 weights.
+void linear_fp32(const Context& ctx, const float* x, std::int64_t m, std::int64_t k, const std::uint16_t* w,
+                 std::int64_t n, const float* bias, float* y);
 
 // y[m, n] = x[m, k] w[n, k]^T (+ bias[n]): x is rounded to bf16 for the
 // product, accumulation is fp32.

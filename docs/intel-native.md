@@ -8,16 +8,37 @@ then found partial cache growth could retain allocations after failure, and
 LayerNorm lost variance on large-offset inputs. The current correctness batch
 adds the parent generator exception guard, an idempotent native cache reset,
 and shifted, centered LayerNorm in a source compiled with precise FP.
-New native failure/recovery and offset-row gates are awaiting device execution.
+Native failure/recovery and offset-row gates now pass on B70: injected partial
+growth, a real 64 MiB allocation cap, and scratch failure after growth all
+recover exact full logits and tokens on the same model. Retained bytes return
+to baseline; repeated reset is harmless.
 The first centered-kernel retry failed at width 768 under default FP; setting
 precise FP for the entire library then failed the existing position-table
 gate. Both RED logs are retained. Precise FP is now restricted to LayerNorm;
 no oracle tolerance changed. Native/server builds and 23 CPU-only tests pass.
 
+Pinned vision diagnostics found projector relative error 0.0536434 at
+`7f2bd2f`, increasing to 0.0630154 at `43f7e8a`, above the unchanged 0.058
+gate. That gate existed in the standalone vision test but was not exercised
+with weights in the first checkpoint run; it was added to the full golden
+test in `6ffeca7`. Keeping projection inputs in fp32 reduces SAM error to
+0.00001784 and projector error to 0.00002694. Matrices stay bf16 in device
+storage; a temporary GPU widening supplies each vision fp32 GEMM. The decoder
+continues to use bf16 projection inputs. Tiny vision error is now 0.000000373.
+Full golden repeats and RPC qualification of this precision fix remain open.
+
+`intel_vision_diagnostic` records SAM/projector arrays and finite comparisons;
+it is a diagnostic executable, not a replacement for the qualification gates.
+One candidate run used a stale vision object after timestamp-preserving sync;
+its receipt is explicitly rejected. A forced rebuild and symbol check verified
+the fp32 projection call before the accepted diagnostic run. Subsequent source
+syncs use content checks and do not preserve timestamps on changed files.
+
 `UOCR_WITH_INTEL=ON` provides `intel-gpu` through Engine and uocr-run.
 The selector accepts Intel Level Zero GPUs. CPU fallback is absent.
-Weights stay in upstream safetensors; matrices use bf16 and accumulation
-uses fp32. oneDNN is used exclusively for matmul. SYCL implements SAM/CLIP,
+Weights stay in upstream safetensors; resident matrices use bf16 and accumulation
+uses fp32. Vision GEMMs preserve fp32 inputs; decoder projections round inputs
+to bf16. oneDNN is used exclusively for matmul. SYCL implements SAM/CLIP,
 projector, decoder attention, RoPE, norms, convolution patch extraction,
 position interpolation, entmax routing, and MoE selection and arithmetic.
 Prefill expert selection also runs on the GPU.
