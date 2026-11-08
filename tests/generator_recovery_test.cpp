@@ -6,11 +6,12 @@ using namespace uocr;
 namespace {
 class FailingDecoder final : public DecoderModel {
  public:
-  enum class Failure { none, prefill, step } failure = Failure::none;
-  bool poisoned = false;
+  enum class Failure { none, embed, prefill, step } failure = Failure::none;
+  mutable bool poisoned = false;
   int resets = 0;
   void reset_request_state() noexcept override { poisoned = false; ++resets; }
   Tensor embed(const std::vector<std::int64_t>& ids) const override {
+    if (failure == Failure::embed) fail();
     return Tensor({static_cast<std::int64_t>(ids.size()), 1});
   }
   std::vector<float> prefill(const Tensor&, const PromptLayout&) override {
@@ -25,11 +26,16 @@ class FailingDecoder final : public DecoderModel {
   }
   std::int64_t block_size() const override { return 4; }
  private:
-  [[noreturn]] void fail() { poisoned = true; throw std::bad_alloc(); }
+  [[noreturn]] void fail() const { poisoned = true; throw std::bad_alloc(); }
 };
-class FailingVision final : public VisionModel {
+class FixtureVision final : public VisionModel {
  public:
-  Tensor encode_view(const Tensor&) const override { throw std::bad_alloc(); }
+  bool failing = true;
+  FixtureVision() { newline_ = Tensor({1}); separator_ = Tensor({1}); }
+  Tensor encode_view(const Tensor&) const override {
+    if (failing) throw std::bad_alloc();
+    return Tensor({1, 1});
+  }
 };
 }
 
@@ -64,9 +70,39 @@ int main() {
     require(decoder.resets == resets + 1, "output failure releases request state");
     recover();
     decoder.poisoned = true;
-    const FailingVision vision;
+    FixtureVision vision;
+    const int before_vision = decoder.resets;
     require_throws([&] { generate(vision, decoder, {PageViews{}}, config); }, "vision failure propagates");
-    require(!decoder.poisoned, "vision failure releases prior retained decoder cache");
+    require(!decoder.poisoned && decoder.resets == before_vision + 1,
+            "vision failure releases prior retained decoder cache once");
+    recover();
+    vision.failing = false;
+    for (auto failure : {FailingDecoder::Failure::embed, FailingDecoder::Failure::prefill,
+                         FailingDecoder::Failure::step}) {
+      decoder.failure = failure;
+      const int before = decoder.resets;
+      bool original = false;
+      try { generate(vision, decoder, {PageViews{}}, config); }
+      catch (const std::bad_alloc&) { original = true; }
+      require(original, "original allocation exception survives delegated generation");
+      require(decoder.resets == before + 1 && !decoder.poisoned, "delegation resets exactly once");
+      recover();
+    }
+    const int before_callback = decoder.resets;
+    bool original = false;
+    try {
+      generate_from_embeddings(decoder, prompt, embeds, config, {}, [](std::size_t) {
+        throw std::runtime_error("prefill callback failed");
+      });
+    } catch (const std::runtime_error& error) { original = std::string(error.what()) == "prefill callback failed"; }
+    require(original && decoder.resets == before_callback + 1, "prefill callback failure preserves cause and resets once");
+    recover();
+    decoder.failure = FailingDecoder::Failure::step;
+    const int before_stop = decoder.resets;
+    const auto stopped = generate_from_embeddings(decoder, prompt, embeds, config,
+                                                  [](const GeneratedToken&) { return false; });
+    require(stopped.tokens.size() == 1 && decoder.resets == before_stop,
+            "cooperative stop retains reusable request cache without throwing");
     recover();
   });
 }
