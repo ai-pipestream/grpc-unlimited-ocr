@@ -1,8 +1,9 @@
 # AGENTS.md: grpc-unlimited-ocr
 
-A gRPC collector in the ai-pipestream parser fleet. It runs the
-Unlimited-OCR 2 model on its own native engine and streams typed results
-to gRParse, which dials it as `GRPARSE_UNLIMITED_OCR_TARGET`.
+A standalone gRPC service in the ai-pipestream parser fleet. It runs the
+Unlimited-OCR 2 model on its own native engine and streams typed results.
+The gRParse collector client and `GRPARSE_UNLIMITED_OCR_TARGET` wiring are
+planned in design phase P4; they are not implemented in the coordinator yet.
 
 ## Read this first, in order
 

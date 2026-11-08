@@ -326,9 +326,10 @@ ones that come close are runtimes, which this design rules out:
 | MLX C++ core (MIT) | Apple's array framework with lazy graphs and good Metal kernels | no as a dependency (a runtime); yes as a reference. Its Metal kernels (GEMM, quantised GEMV, attention) are MIT and can be read or adapted with the notice |
 | ggml Metal backend (MIT) | ggml's MSL kernels | reference only, same reasoning as 4.8 |
 
-Unified memory is the Apple advantage: the safetensors shards are
-memory-mapped and handed to Metal as no-copy buffers, so loading is close
-to free and nothing is duplicated. The implemented kernels read the original bf16 bits and widen to float,
+A future optimization can import the memory-mapped safetensors shards
+as no-copy Metal buffers. The current implementation copies their bf16
+weights into shared buffers. The implemented kernels read those original
+bf16 bits and widen to float,
 including on M2. They never narrow weights to fp16 or silently fall back
 to another backend.
 
@@ -741,6 +742,10 @@ and stop reason, so the merge keeps attribution.
   a capped arena.
 
 ## 6. gRParse integration
+
+This phase remains planned. The current coordinator has no native Unlimited
+OCR collector client, target setting, compose overlay or shell tab. Running
+the standalone service does not enable it in gRParse.
 
 - **Contract.** Vendor `unlimited_ocr.proto` into `collectors/`, add it to
   the CMake proto list, and `examples/web-demo/sync-peer-protos.sh` for
