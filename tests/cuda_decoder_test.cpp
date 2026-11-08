@@ -87,6 +87,9 @@ TableWeights dequantised(const DecoderDims& d) {
 }
 
 double rel(const std::vector<float>& a, const std::vector<float>& b) {
+  require(a.size() == b.size(), "parity size mismatch");
+  for (float v : a) require(std::isfinite(v), "nonfinite candidate");
+  for (float v : b) require(std::isfinite(v), "nonfinite oracle");
   double worst = 0.0, scale = 1e-12;
   for (std::size_t i = 0; i < a.size(); ++i) {
     worst = std::max(worst, std::fabs(static_cast<double>(a[i]) - b[i]));
