@@ -1,7 +1,28 @@
-# Native Intel model checkpoint
+# Native Intel B70 qualification
 
-2026-11-08: native model and single-page golden qualified on B70; strict
-multi-page RPC qualification remains RED. This branch is not ready for release.
+2026-11-08: the native model, single-page golden repeats and strict one/two-page
+TCP RPC matrix pass on B70. No merge or deployment was performed.
+
+Final private test source: `a2b9798e22e8eb367f30f0e11b0193c86f27e9a4`.
+Native runtime source is identical to `a048ced90ffc5fdc7157546756a55250bf6b4690`;
+the final launcher verifies that source diff is empty and the worktree clean.
+Private binary SHA256:
+`83be98338333a58b4106aa4294bd68d028319f46048e70388177293d5d4757ec`.
+All eight original model files were reverified before the matrix; their
+hashes and the golden/common/private binary hashes are in
+[`receipts/intel-final-private-rpc-b70.txt`](receipts/intel-final-private-rpc-b70.txt).
+
+The final matrix completed with exit 0 in 439.98 seconds: eight complete
+RPCs (12 pages), plus three requests cancelled after real GPU prefill.
+Every completed page passed its matching oracle's text, labels, structure
+and geometry gate. The complete token IDs, raw output, serialized blocks
+and validated document payloads repeated identically for each page count.
+All input/document leases returned; cancellation and admission release took
+110.611–140.827 ms. Anonymous RSS was 261,718,016 bytes at two-page warmup
+and 268,468,224 bytes at the end, within the unchanged warmup +128 MiB bound.
+Process peak RSS was 6,944,284 KiB, including mapped model files. The native
+allocation cap remained 12 GiB. One-page RPCs took 26.53–27.31 seconds;
+two-page RPCs took 77.11–79.56 seconds on the shared host.
 
 At native source `a048ced90ffc5fdc7157546756a55250bf6b4690`, the full golden
 passed three repetitions with identical features, all 171 token IDs, text and
@@ -21,7 +42,7 @@ expectation. The RED receipt is preserved. A subsequent two-page reference
 decoder run, using the committed upstream fp32 projector features, reproduced
 the LEVEL1/LEVEL2 titles and printed text/boxes from Intel. The private gate
 now selects that separate two-page oracle; the single-page oracle and both
-geometry thresholds are unchanged. Its final hardware rerun is pending.
+geometry thresholds are unchanged. The final hardware rerun passes.
 
 Independent review found that the original RPC harness counted document
 fragments without checking their payloads. `model_document_checks.h` now
@@ -29,7 +50,8 @@ checks unique token/fragment page identities, complete text, pixel geometry,
 body and caption references, and a single complete document. Validated typed
 documents enter the repeat snapshot. Eleven host-only mutations pass,
 including missing/empty/duplicate/swapped payloads, invalid references, text,
-geometry and NaN. The strengthened private hardware gate is still pending.
+geometry and NaN. The strengthened private hardware gate passes; the host
+assertion receipt is `receipts/intel-final-host-assertions.txt`.
 
 At test source `5b52adda4e760c03e7bd374d41025811d9c71ee8`, B70 also passed
 injected widening-buffer failure and matmul scratch failure after the
@@ -61,7 +83,7 @@ test in `6ffeca7`. Keeping projection inputs in fp32 reduces SAM error to
 0.00001784 and projector error to 0.00002694. Matrices stay bf16 in device
 storage; a temporary GPU widening supplies each vision fp32 GEMM. The decoder
 continues to use bf16 projection inputs. Tiny vision error is now 0.000000373.
-Full golden repeats pass; strict multi-page RPC qualification remains open.
+Full golden repeats and the strict multi-page RPC matrix pass.
 
 `intel_vision_diagnostic` records SAM/projector arrays and finite comparisons;
 it is a diagnostic executable, not a replacement for the qualification gates.
@@ -113,7 +135,8 @@ repository pins. Model files passed SHA verification on the target host.
 
 The complete retry took 3m35.6s under host load above 100 on 32 logical CPUs.
 These timings do not establish controlled throughput. Earlier historical
-runs recorded 7.67/7.73 decode tokens/s. Final performance work remains open.
+runs recorded 7.67/7.73 decode tokens/s. Current measurements are listed above;
+no controlled hardware speedup comparison is claimed.
 
 The common RPC test includes d978a13a4dea8dd23ee8a7d5c4efb99323f1ed11:
 6 repeated requests and 3 cancellation/recovery cycles through loopback TCP.
@@ -150,3 +173,16 @@ one model instance at a time and a 30-minute limit per executable.
 `-DUOCR_WITH_SERVER=OFF` omits gRPC for standalone model testing.
 The service accepts `GRPC_UOCR_BACKEND=intel-gpu` with bf16 precision and
 `GRPC_UOCR_MODELS_DIR`. The runner accepts `--backend intel-gpu --weights bf16`.
+
+## Scope and remaining limits
+
+These receipts qualify the isolated Intel branch and the known page in
+one/two-page requests. They do not qualify the parent integration build,
+a container deployment, a broad document corpus, or a long-document soak.
+The two-page decoder oracle reuses committed upstream fp32 vision features;
+it is not a second full CPU vision run. Native inference always uses the real
+Intel vision encoder. The cap covers native USM and explicit GEMM scratch,
+not driver caches; anonymous host memory is checked separately. Cancellation
+is tested after prefill, not during vision/prefill. No full-model OOM recovery
+or controlled throughput/speedup claim is made. Earlier negative receipts,
+including the rejected stale-object run, remain preserved.
