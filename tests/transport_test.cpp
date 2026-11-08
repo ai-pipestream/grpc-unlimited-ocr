@@ -118,6 +118,10 @@ void internal_failure() {
 
 void slow_reader() {
   Harness h;
+  // Inference can outlast the transport release budget, especially with
+  // sanitizers. Make that distinction deterministic instead of depending
+  // on how quickly this machine tokenizes the large fake output below.
+  h.engine.prefill_delay = 2500ms;
   std::string text = "<PAGE>";
   for (int i = 0; i < 40; ++i) text += "<BLOCK>text[1,2,3,4]<FORK>" + std::string(128 * 1024, 'x');
   h.engine.token_run = 128 * 1024;
@@ -125,17 +129,24 @@ void slow_reader() {
   h.engine.windows = {{text}, {simple_page(1)}};
   h.start();
   grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() + 5s);
+  context.set_deadline(std::chrono::system_clock::now() + 30s);
   auto call = h.stub->ParseDocument(&context);
   require(call->Write(options_request(1)) && call->Write(page_request(1)), "request sent");
-  const auto until = std::chrono::steady_clock::now() + 1s;
-  while (!h.engine.decodes && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(5ms);
+  const auto until = std::chrono::steady_clock::now() + 15s;
+  while ((!h.engine.decodes || h.engine.concurrent) && std::chrono::steady_clock::now() < until) {
+    std::this_thread::sleep_for(5ms);
+  }
+  const bool producer_finished = h.engine.decodes == 1 && h.engine.concurrent == 0 && h.engine.steps_emitted > 0;
+  // Start the two-second release check after inference has returned, not
+  // before output even exists. The client still has not read or cancelled.
   const bool recovered_without_reading = h.released();
   v1::ParseDocumentResponse event;
   while (call->Read(&event)) {}
   const auto status = call->Finish();
+  require(producer_finished, "fake inference produced output and returned before transport release check");
   require(recovered_without_reading, "stalled Write releases budgets without client intervention");
   require(status.error_code() == grpc::StatusCode::CANCELLED, "blocked Write is cancelled on wire");
+  h.engine.prefill_delay = 0ms;
   h.recovery();
 }
 
