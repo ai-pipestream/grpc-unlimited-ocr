@@ -83,7 +83,7 @@ endif()
 if(BUILD_TESTING)
   foreach(test_name dtype_test safetensors_test architecture_test checkpoint_test ops_test vision_test
                     vision_checkpoint_test page_layout_test router_test logit_policy_test tokenizer_test
-                    decoder_test image_test golden_test)
+                    decoder_test generator_recovery_test image_test golden_test)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_link_libraries(${test_name} PRIVATE uocr_reference)
     target_include_directories(${test_name} PRIVATE tests)
