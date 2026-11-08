@@ -35,12 +35,18 @@ kernel void norm(device float* x [[buffer(0)]], device const float* w [[buffer(1
                  constant Params& p [[buffer(8)]], uint row [[thread_position_in_grid]]) {
   if(row>=p.i[0]) return;
   long n=p.i[1], mode=p.i[2], off=long(row)*n;
-  float sum=0,sq=0;
-  for(long c=0;c<n;++c) { float v=x[off+c]; if(mode==2&&!isfinite(v)) { v=0; x[off+c]=0; } sum+=v; sq+=v*v; }
-  float mean=mode==0?sum/float(n):0;
-  float inv=rsqrt(max(sq/float(n)-mean*mean,0.0f)+p.f[0]);
+  float sum=0,sq=0,anchor=mode==0?x[off]:0;
   for(long c=0;c<n;++c) {
-    float v=(x[off+c]-mean)*inv;
+    float v=x[off+c]; if(mode==2&&!isfinite(v)) { v=0; x[off+c]=0; }
+    if(mode==0) sum+=v-anchor; else sq+=v*v;
+  }
+  float mean=mode==0?sum/float(n):0;
+  // Center before squaring: E[x*x]-E[x]^2 loses low variance at large
+  // finite offsets. Anchoring the mean also avoids summing that offset.
+  if(mode==0) for(long c=0;c<n;++c) { float delta=(x[off+c]-anchor)-mean; sq+=delta*delta; }
+  float inv=rsqrt(max(sq/float(n),0.0f)+p.f[0]);
+  for(long c=0;c<n;++c) {
+    float v=((x[off+c]-anchor)-mean)*inv;
     x[off+c]=mode==2?clamp(clamp(v,-1e4f,1e4f)*(1+w[c]),-1e4f,1e4f):v*w[c]+(mode==0?b[c]:0);
   }
 }

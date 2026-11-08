@@ -72,6 +72,24 @@ int main() {
   return run_tests([] {
     const cu::Context ctx(0);
 
+    for (const std::int64_t width : {2, 768, 1024}) {
+      Tensor input({3, width}), w({width}), b({width});
+      for (std::int64_t col = 0; col < width; ++col) {
+        input.data()[col] = 10000.0f + static_cast<float>(col % 2);
+        input.data()[width + col] = 10000.0f + static_cast<float>(col % 8 - 3) * 0.125f;
+        input.data()[2 * width + col] = 10000.0f;
+        w.data()[col] = 1.0f;
+        b.data()[col] = 0.0f;
+      }
+      Tensor expected = input;
+      ref::layer_norm(expected, w, b, 1e-6f);
+      auto actual = up(ctx, input), weight = up(ctx, w), bias = up(ctx, b);
+      cu::layer_norm(ctx, actual.f32(), weight.f32(), bias.f32(), 3, width, 1e-6f);
+      const auto error = max_rel(actual.download(), expected);
+      std::println("offset LayerNorm width={} relative error={:.2e}", width, error);
+      require(error < 1e-5, "offset and constant LayerNorm rows match centered reference");
+    }
+
     {  // Deferred buffer lifetimes under a deliberately tiny allocation cap.
       const cu::Context bounded(0, 4096);
       const Tensor host({128}, std::vector<float>(128, 0.25f));
