@@ -20,6 +20,25 @@ using namespace uocr;
 
 namespace {
 
+void context_ownership() {
+  for (int boundary = 1; boundary <= 5; ++boundary) {
+    auto probe = std::make_shared<cuda::OwnershipTestState>();
+    probe->fail_after = boundary;
+    bool failed = false;
+    try { cuda::Context ctx(0, probe); }
+    catch (const std::bad_alloc&) { failed = true; }
+    require(failed, "context initialization injection reached");
+    for (int i = 0; i < 7; ++i) {
+      require(probe->acquired[i] == (i < boundary ? 1 : 0), "expected context resources acquired");
+      require(probe->released[i] == probe->acquired[i], "partial context releases each handle exactly once");
+    }
+    auto recovery = std::make_shared<cuda::OwnershipTestState>();
+    { cuda::Context ctx(0, recovery); ctx.synchronize(); }
+    require(recovery->acquired == recovery->released, "fresh context works and releases after init failure");
+    std::println("context ownership boundary {} PASS", boundary);
+  }
+}
+
 DecoderDims tiny() {
   DecoderDims d;
   d.vocab = 128830;
@@ -112,7 +131,8 @@ void compare(cuda::WeightFormat format, double tolerance) {
     rp.idx_scale = 4.0f;
     const Decoder ref_model(reference_weights, d, rp);
     ReferenceDecoder ref(ref_model);
-    const cuda::Context ctx(0);
+    auto ownership = std::make_shared<cuda::OwnershipTestState>();
+    const cuda::Context ctx(0, ownership);
     cuda::CudaDecoder dev(ctx, w, d, rp, format);
 
     const auto prompt = build_prompt({12, 12});
@@ -128,6 +148,43 @@ void compare(cuda::WeightFormat format, double tolerance) {
 
     DecodeState state(layout, prompt);
     const BlockPages blocks = block_image_pages(layout, rp.block_size);
+    for (int boundary = 1; boundary <= 2; ++boundary) {
+      dev.reset_request_state();
+      (void)dev.prefill(embeds, layout);
+      const auto before_acquired = ownership->acquired;
+      const auto before_released = ownership->released;
+      ownership->fail_after = boundary;
+      bool failed = false;
+      DecodeState failed_state(layout, prompt);
+      const auto failed_coord = failed_state.advance(7);
+      try { (void)dev.step(7, failed_coord, failed_state.query_page(), blocks); }
+      catch (const std::bad_alloc&) { failed = true; }
+      ownership->fail_after = -1;
+      require(failed, "graph handoff injection reached");
+      require(!ctx.capture_active_for_testing(), "failed graph handoff leaves capture inactive");
+      for (int i = 5; i < 7; ++i) {
+        const int expected = i == 5 || boundary == 2 ? 1 : 0;
+        require(ownership->acquired[i] - before_acquired[i] == expected, "expected graph handles acquired");
+        require(ownership->released[i] - before_released[i] == expected, "failed graph releases each handle exactly once");
+      }
+      dev.reset_request_state();
+      dev.reset_request_state();
+      require(rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout)) < tolerance,
+              "same decoder prefill after graph failure");
+      DecodeState recovered(layout, prompt);
+      for (int token : {7, 9}) {
+        const auto coord = recovered.advance(token);
+        require(rel(dev.step(token, coord, recovered.query_page(), blocks),
+                    ref.step(token, coord, recovered.query_page(), blocks)) < tolerance,
+                "same decoder recaptures and replays after graph failure");
+      }
+      dev.reset_request_state();
+      require(ownership->acquired[5] == ownership->released[5] &&
+              ownership->acquired[6] == ownership->released[6], "successful graphs also released exactly once");
+      std::println("graph ownership boundary {} PASS", boundary);
+    }
+    (void)dev.prefill(embeds, layout);
+    (void)ref.prefill(embeds, layout);
     // A marker, then enough text that the decode attention reads remote
     // blocks as well as its local window.
     std::vector<std::int64_t> feed{7, 9, PromptTokens{}.page, 11};
@@ -196,6 +253,7 @@ void compare(cuda::WeightFormat format, double tolerance) {
 int main() {
   if (cuda::device_count() == 0) return skip("no CUDA device");
   return run_tests([] {
+    context_ownership();
     compare(cuda::WeightFormat::kBf16, 2e-2);
     compare(cuda::WeightFormat::kInt8, 2e-2);
   });

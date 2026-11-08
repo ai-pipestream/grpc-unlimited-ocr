@@ -11,6 +11,14 @@
 
 namespace uocr::cuda {
 namespace {
+void acquired(const std::shared_ptr<OwnershipTestState>& test, int resource) {
+  if (!test) return;
+  ++test->acquired[resource];
+  if (test->fail_after > 0 && --test->fail_after == 0) throw std::bad_alloc();
+}
+void released(const std::shared_ptr<OwnershipTestState>& test, int resource, bool success) noexcept {
+  if (test && success) ++test->released[resource];
+}
 std::size_t element_bytes(DType t) {
   switch (t) {
     case DType::kI8: return 1;
@@ -53,29 +61,41 @@ DeviceInfo device_info(int index) {
   return info;
 }
 
-Context::Context(int device) : impl_(std::make_unique<Impl>()) {
+Context::Context(int device, std::shared_ptr<OwnershipTestState> test) : impl_(std::make_unique<Impl>()) {
+  impl_->test = std::move(test);
   impl_->device = device;
   check(cudaSetDevice(device), "cudaSetDevice");
   check(cudaStreamCreateWithFlags(&impl_->stream, cudaStreamNonBlocking), "cudaStreamCreate");
+  acquired(impl_->test, 0);
   check(cublasCreate(&impl_->blas), "cublasCreate");
+  acquired(impl_->test, 1);
   check(cublasSetStream(impl_->blas, impl_->stream), "cublasSetStream");
   // Plain fp32 GEMMs stay fp32: no TF32 shortcut on the attention products.
   check(cublasSetMathMode(impl_->blas, CUBLAS_DEFAULT_MATH), "cublasSetMathMode");
   check(cublasLtCreate(&impl_->lt), "cublasLtCreate");
+  acquired(impl_->test, 2);
   check(cudaMalloc(&impl_->workspace, impl_->workspace_bytes), "cudaMalloc workspace");
+  acquired(impl_->test, 3);
   // cuBLAS gets a fixed workspace so its calls can be captured in a graph.
   check(cudaMalloc(&impl_->blas_workspace, impl_->workspace_bytes), "cudaMalloc cuBLAS workspace");
+  acquired(impl_->test, 4);
   check(cublasSetWorkspace(impl_->blas, impl_->blas_workspace, impl_->workspace_bytes), "cublasSetWorkspace");
 }
 
-Context::~Context() {
-  if (!impl_) return;
-  cudaStreamSynchronize(impl_->stream);
-  cudaFree(impl_->workspace);
-  cudaFree(impl_->blas_workspace);
-  cublasLtDestroy(impl_->lt);
-  cublasDestroy(impl_->blas);
-  cudaStreamDestroy(impl_->stream);
+Context::Impl::~Impl() noexcept {
+  if (stream) (void)cudaStreamSynchronize(stream);
+  if (blas) released(test, 1, cublasDestroy(blas) == CUBLAS_STATUS_SUCCESS);
+  if (lt) released(test, 2, cublasLtDestroy(lt) == CUBLAS_STATUS_SUCCESS);
+  if (blas_workspace) released(test, 4, cudaFree(blas_workspace) == cudaSuccess);
+  if (workspace) released(test, 3, cudaFree(workspace) == cudaSuccess);
+  if (stream) released(test, 0, cudaStreamDestroy(stream) == cudaSuccess);
+}
+Context::~Context() = default;
+
+bool Context::capture_active_for_testing() const {
+  cudaStreamCaptureStatus status;
+  check(cudaStreamIsCapturing(impl_->stream, &status), "cudaStreamIsCapturing");
+  return status != cudaStreamCaptureStatusNone;
 }
 
 void Context::synchronize() const { check(cudaStreamSynchronize(impl_->stream), "cudaStreamSynchronize"); }
@@ -117,17 +137,19 @@ void Context::require_headroom(std::uint64_t bytes) const {
 }
 
 struct Graph::Impl {
+  std::shared_ptr<OwnershipTestState> test;
   cudaGraph_t graph = nullptr;
   cudaGraphExec_t exec = nullptr;
   cudaStream_t stream = nullptr;
+  ~Impl() noexcept {
+    if (exec) released(test, 6, cudaGraphExecDestroy(exec) == cudaSuccess);
+    if (graph) released(test, 5, cudaGraphDestroy(graph) == cudaSuccess);
+  }
 };
 
 Graph::Graph(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
-Graph::~Graph() {
-  if (impl_->exec != nullptr) cudaGraphExecDestroy(impl_->exec);
-  if (impl_->graph != nullptr) cudaGraphDestroy(impl_->graph);
-}
+Graph::~Graph() = default;
 
 void Graph::launch() const { check(cudaGraphLaunch(impl_->exec, impl_->stream), "cudaGraphLaunch"); }
 
@@ -137,9 +159,12 @@ void Context::begin_capture() const {
 
 std::unique_ptr<Graph> Context::end_capture() const {
   auto g = std::make_unique<Graph::Impl>();
+  g->test = impl_->test;
   g->stream = impl_->stream;
   check(cudaStreamEndCapture(impl_->stream, &g->graph), "cudaStreamEndCapture");
+  acquired(g->test, 5);
   check(cudaGraphInstantiate(&g->exec, g->graph, 0), "cudaGraphInstantiate");
+  acquired(g->test, 6);
   return std::make_unique<Graph>(std::move(g));
 }
 
