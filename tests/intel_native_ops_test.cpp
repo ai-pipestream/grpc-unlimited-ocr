@@ -128,6 +128,38 @@ int main() {
       cu::linear_fp32(ctx, dx.f32(), m, k, dw.bf16(), n, nullptr, dy.f32());
       require(intel_testing::finite_relative_error(dy.download(), full_result) == 0, "fp32 projection repeat identity");
     }
+    {  // Vision temporary allocation failures must drain widening work and release its budget.
+      const auto x = random({17, 96}), w = bf16_rounded(random({50, 96}, 0.1f));
+      auto dx = up(ctx, x), dw = up(ctx, w, cu::DType::kBF16);
+      cu::Array dy(ctx, cu::DType::kF32, 17 * 50);
+      cu::linear_fp32(ctx, dx.f32(), 17, 96, dw.bf16(), 50, nullptr, dy.f32());
+      const auto baseline_output = dy.download();
+      const auto baseline_weights = dw.download();
+      const auto baseline_bytes = ctx.allocated_bytes();
+      for (const int allocation : {0, 1}) {
+        const auto kernels = ctx.kernel_submissions(), gemms = ctx.gemm_submissions();
+        ctx.fail_allocation_after_for_testing(allocation);
+        bool allocation_failed = false;
+        try {
+          cu::linear_fp32(ctx, dx.f32(), 17, 96, dw.bf16(), 50, nullptr, dy.f32());
+        } catch (const std::bad_alloc&) {
+          allocation_failed = true;
+        }
+        require(allocation_failed, "original widening/scratch bad_alloc propagated");
+        ctx.synchronize();
+        require(
+            ctx.kernel_submissions() == kernels + static_cast<unsigned>(allocation) && ctx.gemm_submissions() == gemms,
+            "scratch failure follows queued widening, precedes GEMM");
+        require(ctx.allocated_bytes() == baseline_bytes, "failed projection restores allocation budget");
+        require(intel_testing::finite_relative_error(dw.download(), baseline_weights) == 0,
+                "failed projection preserves resident bf16 weights");
+        cu::linear_fp32(ctx, dx.f32(), 17, 96, dw.bf16(), 50, nullptr, dy.f32());
+        require(intel_testing::finite_relative_error(dy.download(), baseline_output) == 0,
+                "same context projection recovery is exact");
+        require(ctx.allocated_bytes() == baseline_bytes, "successful retry releases temporaries");
+        std::println("vision allocation failure={} recovery PASS baseline_bytes={}", allocation, baseline_bytes);
+      }
+    }
     {  // fp32 batched products
       const Tensor a = random({2 * 5 * 8}), b = random({2 * 7 * 8});
       cu::Array da = up(ctx, a), db = up(ctx, b), dc(ctx, cu::DType::kF32, 2 * 5 * 7);

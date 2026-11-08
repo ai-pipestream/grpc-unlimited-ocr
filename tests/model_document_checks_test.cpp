@@ -1,5 +1,7 @@
 #include "model_document_checks.h"
 
+#include <limits>
+
 #include "output/document_fold.h"
 #include "output_helpers.h"
 
@@ -62,6 +64,10 @@ int main() {
     bad = events;
     bad.push_back(events.back());
     require_throws([&] { check(bad); }, "duplicate folded document rejected");
-    std::println("typed model document mutations: 10 rejected");
+    bad = events;
+    bad[1].mutable_page_document()->mutable_document()->mutable_pictures(0)->mutable_prov(0)->mutable_bbox()->set_r(
+        std::numeric_limits<double>::quiet_NaN());
+    require_throws([&] { check(bad); }, "nonfinite fragment geometry rejected");
+    std::println("typed model document mutations: 11 rejected");
   });
 }
