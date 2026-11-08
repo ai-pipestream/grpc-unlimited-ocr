@@ -54,6 +54,7 @@ Config load_config_from_env() {
   c.weight_format = c.backend == "reference"
       ? configured_choice("GRPC_UOCR_WEIGHT_FORMAT", "fp32", {"fp32"})
       : configured_choice("GRPC_UOCR_WEIGHT_FORMAT", c.weight_format, {"bf16", "int8"});
+  c.device_memory_cap = configured_number("GRPC_UOCR_DEVICE_MEMORY_CAP", 0, 0, 512 * kGiB);
   c.models_dir = configured_string("GRPC_UOCR_MODELS_DIR", c.models_dir);
   c.page_window = configured_u32("GRPC_UOCR_PAGE_WINDOW", c.page_window, 1, 64);
   c.max_tokens_per_page = configured_u32("GRPC_UOCR_MAX_TOKENS_PER_PAGE", c.max_tokens_per_page, 16, 131072);

@@ -1,4 +1,7 @@
-# Intel native backend: primitive stage
+# Intel native backend: original primitive stage
+
+For the full model implementation and current hardware results, see
+[intel-native.md](intel-native.md). This page describes the earlier prototype.
 
 The initial `src/backend/intel` implementation runs fp32 device kernels on
 an explicitly selected Intel Level Zero GPU. It owns allocation, queue
