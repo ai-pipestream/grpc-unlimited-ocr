@@ -24,6 +24,9 @@ using namespace uocr;
 namespace {
 
 double relative_error(std::span<const float> got, std::span<const float> want) {
+  require(got.size() == want.size(), "parity size mismatch");
+  for (float v : got) require(std::isfinite(v), "nonfinite candidate");
+  for (float v : want) require(std::isfinite(v), "nonfinite oracle");
   double worst = 0.0, scale = 1e-12;
   for (std::size_t i = 0; i < want.size(); ++i) {
     worst = std::max(worst, std::fabs(static_cast<double>(got[i]) - want[i]));

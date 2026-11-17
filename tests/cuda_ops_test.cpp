@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <random>
+#include <limits>
 
 #include "backend/cuda/context.h"
 #include "backend/cuda/ops.h"
@@ -45,6 +46,9 @@ cu::Array up_ids(const cu::Context& ctx, const std::vector<std::int64_t>& ids) {
 }
 
 double max_rel(const std::vector<float>& got, const Tensor& want) {
+  require(got.size() == want.span().size(), "parity size mismatch");
+  for (float v : got) require(std::isfinite(v), "nonfinite candidate");
+  for (float v : want.span()) require(std::isfinite(v), "nonfinite oracle");
   double worst = 0.0, scale = 1e-9;
   for (std::int64_t i = 0; i < want.numel(); ++i) {
     worst = std::max(worst, std::fabs(static_cast<double>(got[static_cast<std::size_t>(i)]) - want.data()[i]));
@@ -66,6 +70,17 @@ Tensor bf16_rounded(Tensor t) {
 }  // namespace
 
 int main() {
+  const int guard_result = run_tests([] {
+    Tensor oracle({1}); oracle.data()[0] = 1;
+    require_throws([&] { max_rel({std::numeric_limits<float>::quiet_NaN()}, oracle); }, "reject candidate NaN");
+    require_throws([&] { max_rel({}, oracle); }, "reject size mismatch");
+    require_throws([&] { max_rel({std::numeric_limits<float>::infinity()}, oracle); }, "reject candidate infinity");
+    oracle.data()[0] = std::numeric_limits<float>::quiet_NaN();
+    require_throws([&] { max_rel({1}, oracle); }, "reject oracle NaN");
+    oracle.data()[0] = std::numeric_limits<float>::infinity();
+    require_throws([&] { max_rel({1}, oracle); }, "reject oracle infinity");
+  });
+  if (guard_result) return guard_result;
   if (cu::device_count() == 0) return skip("no CUDA device");
   return run_tests([] {
     const cu::Context ctx(0);
@@ -83,6 +98,8 @@ int main() {
       cu::Array da = up(ctx, a), db = up(ctx, b), dc(ctx, cu::DType::kF32, 2 * 5 * 7);
       cu::gemm_nt(ctx, 5, 7, 8, 0.5f, da.f32(), 8, 40, db.f32(), 8, 56, dc.f32(), 7, 35, 2);
       const auto got = dc.download();
+      require(got.size() == 70, "batched GEMM size");
+      for (float v : got) require(std::isfinite(v), "batched GEMM finite");
       double worst = 0.0;
       for (int bt = 0; bt < 2; ++bt)
         for (int i = 0; i < 5; ++i)
@@ -194,6 +211,7 @@ int main() {
       double worst_q = 0.0, peak = 0.0;
       for (std::int64_t i = 0; i < w.numel(); ++i) {
         deq.data()[i] = static_cast<float>(q[static_cast<std::size_t>(i)]) * sc[static_cast<std::size_t>(i / 32)];
+        require(std::isfinite(deq.data()[i]) && std::isfinite(w.data()[i]), "quantization finite");
         worst_q = std::max(worst_q, std::fabs(static_cast<double>(deq.data()[i]) - w.data()[i]));
         peak = std::max(peak, std::fabs(static_cast<double>(w.data()[i])));
       }
@@ -237,9 +255,12 @@ int main() {
                        {rp.block_size, rp.local_blocks, rp.top_m, rp.top_k, rp.idx_scale, rp.floor, rp.sigma},
                        dmask.f32());
       const auto got = dmask.download();
+      require(got.size() == want.size(), "routing size");
       double worst = 0.0;
       for (std::size_t i = 0; i < want.size(); ++i) {
         const bool a = std::isinf(want[i]), b = std::isinf(got[i]);
+        require(!std::isnan(got[i]) && !std::isnan(want[i]), "routing rejects NaN");
+        if (a && b) require(got[i] == want[i] && got[i] < 0, "routing only negative masked infinity");
         require(a == b, "device routing reads the same keys as the host plan");
         if (!a) worst = std::max(worst, std::fabs(static_cast<double>(got[i]) - want[i]));
       }

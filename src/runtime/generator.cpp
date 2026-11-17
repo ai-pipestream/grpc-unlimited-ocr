@@ -2,10 +2,25 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <stdexcept>
 
 namespace uocr {
 namespace {
+
+class FailedRequestCleanup {
+ public:
+  explicit FailedRequestCleanup(DecoderModel& decoder)
+      : decoder_(decoder), exceptions_(std::uncaught_exceptions()) {}
+  ~FailedRequestCleanup() {
+    if (armed_ && std::uncaught_exceptions() > exceptions_) decoder_.reset_request_state();
+  }
+  void dismiss() noexcept { armed_ = false; }
+ private:
+  DecoderModel& decoder_;
+  int exceptions_;
+  bool armed_ = true;
+};
 
 // log(sum(exp(logits))): the normaliser of a log-softmax, computed once
 // per step for every log-probability the step records.
@@ -20,6 +35,7 @@ double log_normaliser(const std::vector<float>& logits) {
 
 GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, const std::vector<PageViews>& pages,
                           const GenerationConfig& config, const TokenSink& sink, const PrefillSink& prefilled) {
+  FailedRequestCleanup cleanup(decoder);
   std::vector<Tensor> page_tokens;
   std::vector<std::int64_t> counts;
   for (const auto& page : pages) {
@@ -35,11 +51,14 @@ GenerationResult generate(const VisionModel& vision, DecoderModel& decoder, cons
       std::copy_n(tokens.row(r), tokens.dim(1), embeds.row(positions[next++]));
     }
   }
+  // The inner entry point owns cleanup once image preparation has completed.
+  cleanup.dismiss();
   return generate_from_embeddings(decoder, std::move(prompt), embeds, config, sink, prefilled);
 }
 
 GenerationResult generate_from_embeddings(DecoderModel& decoder, std::vector<std::int64_t> prompt, const Tensor& embeds,
                                           const GenerationConfig& config, const TokenSink& sink, const PrefillSink& prefilled) {
+  FailedRequestCleanup cleanup(decoder);
   const PromptTokens tokens;
   const PromptLayout layout = layout_prompt(prompt);
   const BlockPages blocks = block_image_pages(layout, decoder.block_size());

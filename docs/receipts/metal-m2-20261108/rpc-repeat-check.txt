@@ -1,0 +1,3 @@
+pages=1: 3 repeated requests, exact emitted block text/labels/coordinates and raw token text PASS
+pages=2: 3 repeated requests, exact emitted block text/labels/coordinates and raw token text PASS
+Numeric token IDs were not logged; golden test separately asserts token-ID repeat equality.

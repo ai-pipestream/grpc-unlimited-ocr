@@ -1,0 +1,39 @@
+Test project /work/main/grpc-services/worktrees/grpc-unlimited-ocr-native-metal-20261108/build-linux
+      Start  1: dtype_test
+ 1/14 Test  #1: dtype_test .......................   Passed    0.01 sec
+      Start  2: safetensors_test
+ 2/14 Test  #2: safetensors_test .................   Passed    0.01 sec
+      Start  3: architecture_test
+ 3/14 Test  #3: architecture_test ................   Passed    0.01 sec
+      Start  4: checkpoint_test
+ 4/14 Test  #4: checkpoint_test ..................***Skipped   0.01 sec
+      Start  5: ops_test
+ 5/14 Test  #5: ops_test .........................   Passed    0.02 sec
+      Start  6: vision_test
+ 6/14 Test  #6: vision_test ......................   Passed    0.88 sec
+      Start  7: vision_checkpoint_test
+ 7/14 Test  #7: vision_checkpoint_test ...........***Skipped   0.00 sec
+      Start  8: page_layout_test
+ 8/14 Test  #8: page_layout_test .................   Passed    0.01 sec
+      Start  9: router_test
+ 9/14 Test  #9: router_test ......................   Passed    0.01 sec
+      Start 10: logit_policy_test
+10/14 Test #10: logit_policy_test ................   Passed    0.00 sec
+      Start 11: tokenizer_test
+11/14 Test #11: tokenizer_test ...................***Skipped   0.00 sec
+      Start 12: decoder_test
+12/14 Test #12: decoder_test .....................   Passed    1.18 sec
+      Start 13: image_test
+13/14 Test #13: image_test .......................   Passed    0.20 sec
+      Start 14: golden_test
+14/14 Test #14: golden_test ......................***Skipped   0.01 sec
+
+100% tests passed, 0 tests failed out of 14
+
+Total Test time (real) =   2.35 sec
+
+The following tests did not run:
+	  4 - checkpoint_test (Skipped)
+	  7 - vision_checkpoint_test (Skipped)
+	 11 - tokenizer_test (Skipped)
+	 14 - golden_test (Skipped)

@@ -1,0 +1,1 @@
+PASS: 171 CPU generated token IDs match upstream golden exactly, followed by EOS(1) in the trace; raw output including text/labels/geometry and prompt IDs byte-identical.

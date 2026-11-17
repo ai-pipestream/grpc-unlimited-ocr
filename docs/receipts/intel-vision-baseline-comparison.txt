@@ -1,0 +1,22 @@
+DIAGNOSTIC baseline
+7f2bd2f141671b9795d5cec23449658a23a34d98
+ CMakeLists.txt                 | 7 +++++++
+ src/model/intel/intel_vision.h | 1 +
+ 2 files changed, 8 insertions(+)
+d0052ba050eb9b6b0471857bc2c52b92007a28170b3cb8b7124ef76df4feb06a  build-native/intel_vision_diagnostic
+device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=7844 gpu_gemms=4949
+DIAGNOSTIC sam max_relative=0.008461548538101217 l2_relative=0.004784765923744074 worst_index=229172 actual=-0.030948594 expected=-0.03658902
+DIAGNOSTIC projector max_relative=0.05364339382349981 l2_relative=0.026453580385043224 worst_index=160632 actual=-0.17089039 expected=0.043868557
+DIAGNOSTIC ONLY retained=818249728 peak=1070955521
+ok
+DIAGNOSTIC corrected
+43f7e8a810a31f88f236e03fdf900e2ad3272b37
+ CMakeLists.txt                 | 4 ++++
+ src/model/intel/intel_vision.h | 1 +
+ 2 files changed, 5 insertions(+)
+342f3ffe7fef0491c732c5e5198884f56047540b898d6d310ad649d2448bc524  build-native/intel_vision_diagnostic
+device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=7844 gpu_gemms=4949
+DIAGNOSTIC sam max_relative=0.007932487294348532 l2_relative=0.004805468215222965 worst_index=49233 actual=0.066407174 expected=0.06111942
+DIAGNOSTIC projector max_relative=0.06301539569227911 l2_relative=0.028291274243741487 worst_index=166098 actual=-1.229631 expected=-0.9773516
+DIAGNOSTIC ONLY retained=818249728 peak=1070955521
+ok

@@ -79,6 +79,8 @@ class ReferenceDecoder final : public DecoderModel {
  public:
   explicit ReferenceDecoder(const Decoder& decoder) : decoder_(decoder) {}
 
+  void reset_request_state() noexcept override { cache_ = {}; }
+
   Tensor embed(const std::vector<std::int64_t>& ids) const override { return decoder_.embed(ids); }
   std::vector<float> prefill(const Tensor& embeds, const PromptLayout& layout) override {
     return decoder_.prefill(embeds, layout, cache_);

@@ -1,0 +1,41 @@
+UpdateCTestConfiguration  from :/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Parse Config file:/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Test project /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 5
+    Start 5: metal_golden_test
+
+5: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_golden_test
+5: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+5: Test timeout computed to be: 900
+5: device=Apple M2 weights=upstream-bf16 activations=fp32 accumulation=fp32
+5: repeat=0 prefill_tokens=279 prefill_seconds=23.840
+5: repeat=0 steps=32
+5: repeat=0 steps=64
+5: repeat=0 steps=96
+5: repeat=0 steps=128
+5: repeat=0 steps=160
+5: repeat=0 seconds=57.145 decode_seconds=33.304 tokens=171 peak_rss_bytes=3108618240 metal_live_bytes=6829784464 metal_peak_bytes=7132895488 metal_device_allocated_bytes=6830735360 kernels=71930 gemms=53264
+5: bf16: 6 boxes, largest coordinate difference 0
+5: repeat=1 prefill_tokens=279 prefill_seconds=18.420
+5: repeat=1 steps=32
+5: repeat=1 steps=64
+5: repeat=1 steps=96
+5: repeat=1 steps=128
+5: repeat=1 steps=160
+5: repeat=1 seconds=43.981 decode_seconds=25.561 tokens=171 peak_rss_bytes=3108618240 metal_live_bytes=6829784464 metal_peak_bytes=7315618256 metal_device_allocated_bytes=6830735360 kernels=71903 gemms=53264
+5: bf16: 6 boxes, largest coordinate difference 0
+5: ok
+1/1 Test #5: metal_golden_test ................   Passed  139.35 sec
+
+The following tests passed:
+	metal_golden_test
+
+100% tests passed out of 1
+
+Total Test time (real) = 139.36 sec

@@ -1,0 +1,120 @@
+UpdateCTestConfiguration  from :/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Parse Config file:/Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/DartConfiguration.tcl
+Test project /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 2
+    Start  2: metal_context_test
+
+2: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_context_test
+2: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+2: Test timeout computed to be: 60
+2: ok
+1/5 Test  #2: metal_context_test ...............   Passed    0.16 sec
+test 3
+    Start  3: metal_ops_test
+
+3: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_ops_test
+3: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+3: Test timeout computed to be: 60
+3: deferred buffers and allocation cap: ok
+3: linear bf16            rel err 2.45e-07 (tol 1e-05)
+3: gemm_nt batched        rel err 4.77e-07 (tol 1e-05)
+3: gemm_nn                rel err 0.00e+00 (tol 1e-05)
+3: layer_norm             rel err 1.53e-07 (tol 1e-05)
+3: rms_norm               rel err 2.06e-07 (tol 1e-05)
+3: gelu_erf               rel err 1.43e-07 (tol 1e-06)
+3: quick_gelu             rel err 7.17e-08 (tol 1e-06)
+3: softmax_rows           rel err 3.58e-07 (tol 1e-05)
+3: conv2d via im2col      rel err 2.08e-07 (tol 1e-05)
+3: rope page2d            rel err 1.09e-06 (tol 1e-05)
+3: block_summaries        rel err 9.62e-08 (tol 1e-05)
+3: route_blocks bias      rel err 0.00e+00 (tol 1e-05)
+3: ok
+2/5 Test  #3: metal_ops_test ...................   Passed    0.12 sec
+test 4
+    Start  4: metal_vision_test
+
+4: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_vision_test
+4: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+4: Test timeout computed to be: 60
+4: tiny model, tiled page: relative error 3.05e-07
+4: ok
+3/5 Test  #4: metal_vision_test ................   Passed    0.16 sec
+test 5
+    Start  5: metal_decoder_test
+
+5: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/metal_decoder_test
+5: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+5: Test timeout computed to be: 60
+5: weights bf16
+5: prefill logits: relative error 6.96e-07
+5: step      7: relative error 4.04e-07
+5: step      9: relative error 3.68e-07
+5: step 128827: relative error 5.79e-07
+5: step     11: relative error 3.67e-07
+5: step    100: relative error 3.86e-07
+5: step    113: relative error 3.67e-07
+5: step    126: relative error 7.76e-07
+5: step    139: relative error 3.14e-07
+5: step    152: relative error 2.69e-07
+5: step    165: relative error 4.97e-07
+5: step    178: relative error 5.49e-07
+5: step    191: relative error 1.28e-06
+5: step    204: relative error 6.68e-07
+5: step    217: relative error 6.06e-07
+5: step    230: relative error 5.03e-07
+5: step    243: relative error 5.38e-07
+5: step    256: relative error 4.66e-07
+5: step    269: relative error 6.90e-07
+5: step    282: relative error 1.58e-06
+5: step    295: relative error 5.72e-07
+5: step    308: relative error 4.26e-07
+5: step    321: relative error 1.10e-06
+5: step    334: relative error 8.56e-07
+5: step    347: relative error 9.82e-07
+5: step    360: relative error 1.10e-06
+5: step    373: relative error 3.83e-07
+5: step    386: relative error 3.92e-07
+5: step    399: relative error 4.25e-07
+5: step    412: relative error 6.04e-07
+5: step    425: relative error 5.70e-07
+5: step    438: relative error 3.09e-07
+5: step    451: relative error 4.53e-07
+5: step    464: relative error 3.70e-07
+5: step    477: relative error 6.72e-07
+5: step    490: relative error 1.30e-05
+5: step    503: relative error 6.81e-07
+5: step    516: relative error 4.21e-07
+5: step    529: relative error 1.15e-06
+5: step    542: relative error 1.98e-06
+5: step    555: relative error 4.02e-07
+5: step    568: relative error 9.76e-07
+5: step    581: relative error 1.37e-06
+5: step    594: relative error 1.75e-06
+5: step    607: relative error 2.69e-06
+5: ok
+4/5 Test  #5: metal_decoder_test ...............   Passed    0.49 sec
+test 27
+    Start 27: config_test
+
+27: Test command: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build/config_test
+27: Working Directory: /Users/krickert/work/astra-metal-20261108/unlimited-native-metal/build
+27: Test timeout computed to be: 1500
+27: ok
+5/5 Test #27: config_test ......................   Passed    0.22 sec
+
+The following tests passed:
+	metal_context_test
+	metal_ops_test
+	metal_vision_test
+	metal_decoder_test
+	config_test
+
+100% tests passed out of 5
+
+Total Test time (real) =   1.15 sec

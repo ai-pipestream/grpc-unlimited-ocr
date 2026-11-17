@@ -17,6 +17,11 @@ class DecoderModel {
  public:
   virtual ~DecoderModel() = default;
 
+  // Release request-owned caches after failed generation, including partial
+  // allocation growth. Implementations must drain pending users safely and
+  // tolerate repeated calls. Model weights remain available for the next RPC.
+  virtual void reset_request_state() noexcept = 0;
+
   virtual Tensor embed(const std::vector<std::int64_t>& ids) const = 0;
 
   // Starts a document; returns the next-token logits after the prompt.

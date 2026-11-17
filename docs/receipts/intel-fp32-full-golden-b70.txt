@@ -1,0 +1,86 @@
+FIXED GOLDEN START 2026-11-08T22:29:46Z
+a048ced90ffc5fdc7157546756a55250bf6b4690
+ 17:29:46 up 9 days, 10:00,  5 users,  load average: 16.61, 16.89, 23.08
+               total        used        free      shared  buff/cache   available
+Mem:            61Gi        10Gi        22Gi       295Mi        29Gi        50Gi
+Swap:           63Gi        11Gi        52Gi
+sysman_device=Intel(R) Arc(TM) Pro B70 Graphics
+memory_free_bytes=15287115776 memory_size_bytes=34242297856 required_free_bytes=12884901888
+model-00001-of-00002.safetensors: OK
+model-00002-of-00002.safetensors: OK
+model.safetensors.index.json: OK
+tokenizer.json: OK
+tokenizer_config.json: OK
+special_tokens_map.json: OK
+config.json: OK
+generation_config.json: OK
+a1f9c2da0be4f3f9a0a221a6bd6e7d4be2a1047144fa1b4b88493f48d46de2f1  build-native/intel_native_golden_test
+actual_device=Intel(R) Arc(TM) Pro B70 Graphics precision=bf16_weights_fp32_activations memory_cap_bytes=12884901888
+VISION upstream_fp32_relative_error=2.69431687e-05
+VISION device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=8569 gpu_gemms=5814 seconds=2.423933
+PREFILL device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=467 gpu_gemms=371
+DECODER completed native_kernels=80324 gpu_gemms=45344
+repeat=0 total_s=26.253854 vision_prefill_s=4.243974 decode_s=22.009880 tokens=171 decode_tok_s=7.769 retained_bytes=6829784464 peak_bytes=6946240769
+RAW <PAGE><BLOCK>title[90, 67, 824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+bf16: 6 boxes, largest coordinate difference 0
+VmHWM:	 6866128 kB
+VmRSS:	 6866128 kB
+VISION repeated relative_error=0
+VISION device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=8545 gpu_gemms=5814 seconds=2.038959
+PREFILL device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=467 gpu_gemms=371
+DECODER completed native_kernels=80324 gpu_gemms=45344
+repeat=1 total_s=26.564167 vision_prefill_s=3.840230 decode_s=22.723937 tokens=171 decode_tok_s=7.525 retained_bytes=6829784464 peak_bytes=7079610769
+RAW <PAGE><BLOCK>title[90, 67, 824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+bf16: 6 boxes, largest coordinate difference 0
+VmHWM:	 6866652 kB
+VmRSS:	 6866652 kB
+VISION repeated relative_error=0
+VISION device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=8545 gpu_gemms=5814 seconds=2.164469
+PREFILL device=Intel(R) Arc(TM) Pro B70 Graphics native_kernels=467 gpu_gemms=371
+DECODER completed native_kernels=80324 gpu_gemms=45344
+repeat=2 total_s=26.412167 vision_prefill_s=3.842858 decode_s=22.569309 tokens=171 decode_tok_s=7.577 retained_bytes=6829784464 peak_bytes=7079610769
+RAW <PAGE><BLOCK>title[90, 67, 824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121, 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, 461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_caption[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+bf16: 6 boxes, largest coordinate difference 0
+VmHWM:	 6866652 kB
+VmRSS:	 6866652 kB
+ok
+	Command being timed: "timeout --kill-after=10s 900s nice -n10 stdbuf -oL -eL build-native/intel_native_golden_test"
+	User time (seconds): 77.90
+	System time (seconds): 5.02
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:24.43
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6861748
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 665975
+	Voluntary context switches: 22822
+	Involuntary context switches: 11658
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+FIXED GOLDEN RELEASE 2026-11-08T22:31:13Z
+ 17:31:13 up 9 days, 10:02,  5 users,  load average: 23.30, 18.33, 23.00

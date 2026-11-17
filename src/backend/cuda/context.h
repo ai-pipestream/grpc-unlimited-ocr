@@ -5,6 +5,7 @@
 // against kernels built by nvcc without sharing any CUDA headers.
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -17,6 +18,8 @@ struct DeviceInfo {
   int compute_minor = 0;
   std::uint64_t free_bytes = 0;
   std::uint64_t total_bytes = 0;
+  std::uint64_t pool_reserved_bytes = 0;
+  std::uint64_t pool_used_bytes = 0;
 };
 
 // Number of visible devices; 0 when there is no usable CUDA driver.
@@ -27,14 +30,30 @@ DeviceInfo device_info(int index);
 // op runs on this stream in order; host reads synchronise explicitly.
 class Graph;
 
+// Explicit test-only injection, never selected by production configuration.
+// Indices: stream, BLAS, BLASLt, workspace, BLAS workspace, graph, graph exec.
+struct OwnershipTestState {
+  std::array<int, 7> acquired{};
+  std::array<int, 7> released{};
+  int fail_after = -1;
+};
+
 class Context {
  public:
-  explicit Context(int device = 0);
+  explicit Context(int device = 0, std::shared_ptr<OwnershipTestState> test = {});
   ~Context();
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;
 
   void synchronize() const;
+  // Conservative admission check, not an allocation cap or peak guarantee.
+  // On integrated GPUs also accounts for the container's shared-memory limit.
+  void require_headroom(std::uint64_t bytes) const;
+  void abort_capture() const noexcept;
+  bool capture_active_for_testing() const;
+  // Deterministic allocation-failure tests without exhausting the shared GPU.
+  // -1 disables injection; 0 fails the next Array allocation.
+  void fail_allocation_after_for_testing(std::int64_t successful_allocations) const noexcept;
 
   // Records everything enqueued between the two calls as a graph instead
   // of running it.

@@ -1,0 +1,56 @@
+CPU watchdog elapsed=0s rss_kib=32 memory_free_percent=67
+CPU watchdog elapsed=5s rss_kib=2787584 memory_free_percent=66
+CPU watchdog elapsed=10s rss_kib=5751232 memory_free_percent=47
+CPU watchdog elapsed=15s rss_kib=3879856 memory_free_percent=35
+CPU watchdog elapsed=20s rss_kib=3487504 memory_free_percent=34
+CPU watchdog elapsed=25s rss_kib=3082272 memory_free_percent=35
+CPU watchdog elapsed=30s rss_kib=3013184 memory_free_percent=34
+loaded in 32.9 s
+CPU watchdog elapsed=35s rss_kib=3129280 memory_free_percent=34
+CPU watchdog elapsed=40s rss_kib=2691424 memory_free_percent=35
+CPU watchdog elapsed=45s rss_kib=2552800 memory_free_percent=35
+CPU watchdog elapsed=50s rss_kib=2399792 memory_free_percent=35
+CPU watchdog elapsed=55s rss_kib=1919408 memory_free_percent=34
+CPU watchdog elapsed=60s rss_kib=1694336 memory_free_percent=35
+CPU watchdog elapsed=65s rss_kib=1684752 memory_free_percent=35
+CPU watchdog elapsed=70s rss_kib=1690416 memory_free_percent=35
+CPU watchdog elapsed=75s rss_kib=1721296 memory_free_percent=35
+CPU watchdog elapsed=80s rss_kib=1961504 memory_free_percent=35
+CPU watchdog elapsed=85s rss_kib=2410208 memory_free_percent=35
+CPU watchdog elapsed=90s rss_kib=2366256 memory_free_percent=35
+CPU watchdog elapsed=95s rss_kib=2862608 memory_free_percent=34
+CPU watchdog elapsed=100s rss_kib=3115040 memory_free_percent=34
+CPU watchdog elapsed=105s rss_kib=3062624 memory_free_percent=34
+CPU watchdog elapsed=110s rss_kib=4118736 memory_free_percent=37
+CPU watchdog elapsed=115s rss_kib=3900656 memory_free_percent=36
+<PAGE><BLOCK>title[CPU watchdog elapsed=120s rss_kib=5848736 memory_free_percent=46
+90, 67, CPU watchdog elapsed=125s rss_kib=4747664 memory_free_percent=41
+824, 99]<FORK>Scanned page: OCR, figures, barcode
+<BLOCK>text[88, 121,CPU watchdog elapsed=130s rss_kib=7406528 memory_free_percent=51
+ 699, 167]<FORK>This page has no digital text layer. Every line here reaches the demo through RapidOCR, so its boxes render dashed.
+<BLOCK>chart[292, 222, 730, CPU watchdog elapsed=135s rss_kib=10615072 memory_free_percent=65
+461]<FORK>
+<BLOCK>image_caption[215, 515, 814, 537]<FORK>Figure 1: quarterly volume, classified by the figure model.
+<BLOCK>image[379, 603, 620, 792]<FORK>
+<BLOCK>image_captionCPU watchdog elapsed=140s rss_kib=11579872 memory_free_percent=69
+[151, 836, 820, 882]<FORK>Figure 2: the QR payload decodes in-process via ZXing and rides the picture item as a barcode annotation.
+prompt 279 tokens, prefill 86.4 s, 171 tokens in 25.1 s (6.82 tok/s), finish 0
+CPU watchdog child_status=0 elapsed=145s
+      145.42 real       125.16 user        17.86 sys
+         11900567552  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             3203249  page reclaims
+              407780  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              166180  voluntary context switches
+              556117  involuntary context switches
+           220786798  instructions retired
+           161457120  cycles elapsed
+             4260248  peak memory footprint

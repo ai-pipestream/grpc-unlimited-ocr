@@ -7,7 +7,10 @@
 #   docker run --rm --runtime nvidia -v /path/to/unlimited-ocr-2:/models:ro \
 #     -v "$PWD/pages:/pages:ro" grpc-unlimited-ocr:jetson --weights int8 /pages/page1.png
 #
-# bf16 weights do not fit beside the OS in 8 GB; use --weights int8.
+# The default target remains the developer runner. Build --target server for
+# the gRPC service; qualify that image on hardware before deployment.
+# INT8 reduces weight storage but does not guarantee that full-model workspace
+# fits on an 8 GB Orin. Qualify against available memory before deployment.
 
 FROM nvidia/cuda:13.2.1-devel-ubuntu24.04 AS build
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,18 +20,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
-# The gRPC server is not built here yet (gRPC from source on the Orin is
-# its own change); the image keeps the developer runner.
-RUN cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
-      -DUOCR_WITH_SERVER=OFF \
+# Build the service and runner from the same pinned source and dependencies.
+ARG BUILD_JOBS=2
+RUN case "$BUILD_JOBS" in ''|*[!0-9]*|0) echo 'BUILD_JOBS must be positive' >&2; exit 1;; esac \
+ && test "$BUILD_JOBS" -gt 0 \
+ && cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
+      -DUOCR_WITH_SERVER=ON \
       -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_CUDA_HOST_COMPILER=g++-14 \
       -DCMAKE_CUDA_ARCHITECTURES=87 \
- && cmake --build /build \
+ && cmake --build /build --parallel "$BUILD_JOBS" \
  && ctest --test-dir /build --output-on-failure \
- && mkdir -p /out && cp /build/uocr-run /out/ \
+ && mkdir -p /out && cp /build/uocr-run /build/grpc-unlimited-ocr-server /out/ \
  && mkdir -p /out/tests && cp /build/*_test /out/tests/
 
-FROM nvidia/cuda:13.2.1-runtime-ubuntu24.04
+FROM nvidia/cuda:13.2.1-runtime-ubuntu24.04 AS runtime
 # The base ships CUDA forward-compat libraries (compat, compat_orin); the Jetson container
 # toolkit's compat hook fails parsing them (panics at container start),
 # and the L4T driver is new enough, so they are removed.
@@ -36,6 +41,17 @@ RUN rm -rf /usr/local/cuda-*/compat*
 ARG UOCR_REVISION=
 LABEL org.opencontainers.image.revision=${UOCR_REVISION}
 COPY --from=build /out/uocr-run /usr/local/bin/uocr-run
+COPY --from=build /out/grpc-unlimited-ocr-server /usr/local/bin/grpc-unlimited-ocr-server
 COPY --from=build /out/tests/ /usr/local/libexec/uocr-tests/
 USER 65532:65532
+
+FROM runtime AS server
+ENV GRPC_UOCR_LISTEN_ADDRESS=0.0.0.0:50073 \
+    GRPC_UOCR_BACKEND=cuda \
+    GRPC_UOCR_WEIGHT_FORMAT=int8 \
+    GRPC_UOCR_MODELS_DIR=/models
+EXPOSE 50073
+ENTRYPOINT ["/usr/local/bin/grpc-unlimited-ocr-server"]
+
+FROM runtime AS runner
 ENTRYPOINT ["/usr/local/bin/uocr-run", "--models", "/models", "--backend", "cuda"]

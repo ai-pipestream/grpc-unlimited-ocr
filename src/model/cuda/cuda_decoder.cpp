@@ -91,7 +91,21 @@ Tensor CudaDecoder::embed(const std::vector<std::int64_t>& ids) const {
   return Tensor({n, dims_.hidden}, out.download());
 }
 
-void CudaDecoder::reserve(std::int64_t keys) {
+void CudaDecoder::reset_request_state() noexcept {
+  ctx_.abort_capture();
+  try { ctx_.synchronize(); } catch (...) {}
+  graph_.reset();
+  step_ = {};
+  state_host_.reset();
+  logits_host_.reset();
+  cache_.clear();
+  block_min_ = {};
+  block_max_ = {};
+  length_ = capacity_ = capacity_blocks_ = prompt_blocks_ = 0;
+  try { ctx_.synchronize(); } catch (...) {}
+}
+
+void CudaDecoder::reserve(std::int64_t keys) try {
   if (keys <= capacity_) return;
   const std::int64_t width = dims_.heads * dims_.head_dim;
   const std::int64_t capacity = std::max<std::int64_t>(keys, capacity_ * 2 + 1024);
@@ -114,6 +128,11 @@ void CudaDecoder::reserve(std::int64_t keys) {
   capacity_ = capacity;
   capacity_blocks_ = (capacity + router_.block_size - 1) / router_.block_size;
   graph_.reset();  // buffers moved: the captured step must be recorded again
+} catch (...) {
+  // Some layers may already have grown while capacity_ still describes the
+  // old request. Drop every request buffer and graph before the next use.
+  reset_request_state();
+  throw;
 }
 
 void CudaDecoder::mlp(const Expert& e, const Array& x, std::int64_t rows, Array& out) const {
@@ -286,6 +305,9 @@ std::vector<float> CudaDecoder::run(Array& x, std::int64_t rows, std::int64_t fi
 }
 
 std::vector<float> CudaDecoder::prefill(const Tensor& embeds, const PromptLayout& layout) {
+  // The captured step contains this prompt's routing pointers and block
+  // count. Capacity reuse does not make those captures valid for a new page.
+  graph_.reset();
   length_ = 0;
   const std::int64_t s = embeds.dim(0);
   const BlockPages blocks = block_image_pages(layout, router_.block_size);

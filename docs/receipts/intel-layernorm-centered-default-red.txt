@@ -1,0 +1,58 @@
+CORRECTED TINY START 2026-11-08T22:01:54Z
+6ffeca729e8e77d1f754fdd1ff8abb3a130902d9
+ CMakeLists.txt                          |  2 +-
+ src/backend/intel/native/context.cpp    | 31 ++++++++++--
+ src/backend/intel/native/context.h      |  2 +
+ src/backend/intel/native/context_impl.h |  2 +
+ src/backend/intel/native/ops.cpp        | 15 ++++--
+ src/model/decoder_model.h               |  5 ++
+ src/model/intel/intel_decoder.cpp       | 15 ++++++
+ src/model/intel/intel_decoder.h         |  2 +
+ src/runtime/generator.cpp               | 19 ++++++++
+ tests/intel_native_decoder_test.cpp     | 86 ++++++++++++++++++++++++++++++++-
+ tests/intel_native_ops_test.cpp         | 14 ++++++
+ 11 files changed, 183 insertions(+), 10 deletions(-)
+START generator_recovery_test
+9172618158b89e9e8cfe260e3c2e33d98ff434c29e69a136d57a35f7c9b2470a  build-native/generator_recovery_test
+ok
+PASS generator_recovery_test
+START intel_numeric_guard_test
+96aec4648ee53ed3155c4e73be9bb0be49ddcf2fee271009ade397680437c535  build-native/intel_numeric_guard_test
+ok
+PASS intel_numeric_guard_test
+START intel_ops_test
+f7048a71796727501281ba8f7c0715857e52b832a562973d74c881dd72efeb40  build-native/intel_ops_test
+device=Intel(R) Arc(TM) Pro B70 Graphics driver=1.15.39122
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=2.38419e-07
+rms_norm count=903 max_abs=2.38419e-07
+softmax_masked count=903 max_abs=1.11759e-08
+linear_100_device_us=1329
+linear_bias count=91 max_abs=4.29153e-06
+linear_no_bias count=91 max_abs=4.29153e-06
+PASS initial Intel primitive parity; full model has separate qualification gates
+PASS intel_ops_test
+START intel_native_ops_test
+f63327ca814d7c64699a81bba867f01db99d16cf725119cc34625345b3a33d51  build-native/intel_native_ops_test
+actual device=Intel(R) Arc(TM) Pro B70 Graphics cap_bytes=27393838284
+position linear table  rel err 8.98e-07 (tol 2e-06)
+position cubic grid    rel err 8.31e-08 (tol 2e-06)
+linear bf16            rel err 8.04e-08 (tol 1e-05)
+model GEMM shape M=1 N=1280 K=1280
+model bf16 projection  rel err 1.21e-07 (tol 2e-05)
+model GEMM shape M=17 N=1280 K=1280
+model bf16 projection  rel err 1.44e-07 (tol 2e-05)
+model GEMM shape M=17 N=2304 K=768
+model bf16 projection  rel err 2.01e-07 (tol 2e-05)
+model GEMM shape M=3 N=6848 K=1280
+model bf16 projection  rel err 3.37e-07 (tol 2e-05)
+model GEMM shape M=1 N=896 K=1280
+model bf16 projection  rel err 1.11e-07 (tol 2e-05)
+gemm_nt batched        rel err 2.38e-07 (tol 1e-05)
+gemm_nn                rel err 5.13e-08 (tol 1e-05)
+offset LayerNorm width=2
+offset low-variance layer_norm rel err 0.00e+00 (tol 1e-05)
+offset LayerNorm width=768
+offset low-variance layer_norm rel err 2.17e-03 (tol 1e-05)
+FAIL: offset low-variance layer_norm

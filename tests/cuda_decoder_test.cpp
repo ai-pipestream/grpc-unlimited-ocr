@@ -8,6 +8,7 @@
 
 #include "backend/cuda/context.h"
 #include "check.h"
+#include "runtime/generator.h"
 #include "model/cuda/cuda_decoder.h"
 #include "model/cuda/device_weight.h"
 #include "model/decoder.h"
@@ -18,6 +19,25 @@
 using namespace uocr;
 
 namespace {
+
+void context_ownership() {
+  for (int boundary = 1; boundary <= 5; ++boundary) {
+    auto probe = std::make_shared<cuda::OwnershipTestState>();
+    probe->fail_after = boundary;
+    bool failed = false;
+    try { cuda::Context ctx(0, probe); }
+    catch (const std::bad_alloc&) { failed = true; }
+    require(failed, "context initialization injection reached");
+    for (int i = 0; i < 7; ++i) {
+      require(probe->acquired[i] == (i < boundary ? 1 : 0), "expected context resources acquired");
+      require(probe->released[i] == probe->acquired[i], "partial context releases each handle exactly once");
+    }
+    auto recovery = std::make_shared<cuda::OwnershipTestState>();
+    { cuda::Context ctx(0, recovery); ctx.synchronize(); }
+    require(recovery->acquired == recovery->released, "fresh context works and releases after init failure");
+    std::println("context ownership boundary {} PASS", boundary);
+  }
+}
 
 DecoderDims tiny() {
   DecoderDims d;
@@ -87,6 +107,9 @@ TableWeights dequantised(const DecoderDims& d) {
 }
 
 double rel(const std::vector<float>& a, const std::vector<float>& b) {
+  require(a.size() == b.size(), "parity size mismatch");
+  for (float v : a) require(std::isfinite(v), "nonfinite candidate");
+  for (float v : b) require(std::isfinite(v), "nonfinite oracle");
   double worst = 0.0, scale = 1e-12;
   for (std::size_t i = 0; i < a.size(); ++i) {
     worst = std::max(worst, std::fabs(static_cast<double>(a[i]) - b[i]));
@@ -108,7 +131,8 @@ void compare(cuda::WeightFormat format, double tolerance) {
     rp.idx_scale = 4.0f;
     const Decoder ref_model(reference_weights, d, rp);
     ReferenceDecoder ref(ref_model);
-    const cuda::Context ctx(0);
+    auto ownership = std::make_shared<cuda::OwnershipTestState>();
+    const cuda::Context ctx(0, ownership);
     cuda::CudaDecoder dev(ctx, w, d, rp, format);
 
     const auto prompt = build_prompt({12, 12});
@@ -124,6 +148,43 @@ void compare(cuda::WeightFormat format, double tolerance) {
 
     DecodeState state(layout, prompt);
     const BlockPages blocks = block_image_pages(layout, rp.block_size);
+    for (int boundary = 1; boundary <= 2; ++boundary) {
+      dev.reset_request_state();
+      (void)dev.prefill(embeds, layout);
+      const auto before_acquired = ownership->acquired;
+      const auto before_released = ownership->released;
+      ownership->fail_after = boundary;
+      bool failed = false;
+      DecodeState failed_state(layout, prompt);
+      const auto failed_coord = failed_state.advance(7);
+      try { (void)dev.step(7, failed_coord, failed_state.query_page(), blocks); }
+      catch (const std::bad_alloc&) { failed = true; }
+      ownership->fail_after = -1;
+      require(failed, "graph handoff injection reached");
+      require(!ctx.capture_active_for_testing(), "failed graph handoff leaves capture inactive");
+      for (int i = 5; i < 7; ++i) {
+        const int expected = i == 5 || boundary == 2 ? 1 : 0;
+        require(ownership->acquired[i] - before_acquired[i] == expected, "expected graph handles acquired");
+        require(ownership->released[i] - before_released[i] == expected, "failed graph releases each handle exactly once");
+      }
+      dev.reset_request_state();
+      dev.reset_request_state();
+      require(rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout)) < tolerance,
+              "same decoder prefill after graph failure");
+      DecodeState recovered(layout, prompt);
+      for (int token : {7, 9}) {
+        const auto coord = recovered.advance(token);
+        require(rel(dev.step(token, coord, recovered.query_page(), blocks),
+                    ref.step(token, coord, recovered.query_page(), blocks)) < tolerance,
+                "same decoder recaptures and replays after graph failure");
+      }
+      dev.reset_request_state();
+      require(ownership->acquired[5] == ownership->released[5] &&
+              ownership->acquired[6] == ownership->released[6], "successful graphs also released exactly once");
+      std::println("graph ownership boundary {} PASS", boundary);
+    }
+    (void)dev.prefill(embeds, layout);
+    (void)ref.prefill(embeds, layout);
     // A marker, then enough text that the decode attention reads remote
     // blocks as well as its local window.
     std::vector<std::int64_t> feed{7, 9, PromptTokens{}.page, 11};
@@ -134,11 +195,65 @@ void compare(cuda::WeightFormat format, double tolerance) {
       if (t < 128 || t == PromptTokens{}.page) std::println("step {:>6}: relative error {:.2e}", t, e);
       require(e < tolerance, "decode logits agree");
     }
+
+    // Reuse an existing captured step with a different prompt's routing
+    // arrays, without growing capacity or recreating the model.
+    for (const auto& image_lengths : {std::vector<std::int64_t>{7}, std::vector<std::int64_t>{12, 12}}) {
+      const auto next_prompt = build_prompt(image_lengths);
+      const auto next_embeds = ref.embed(next_prompt);
+      const auto next_layout = layout_prompt(next_prompt);
+      const auto next_blocks = block_image_pages(next_layout, rp.block_size);
+      require(rel(dev.prefill(next_embeds, next_layout), ref.prefill(next_embeds, next_layout)) < tolerance,
+              "changed-layout prefill agrees");
+      DecodeState next_state(next_layout, next_prompt);
+      const auto next_coord = next_state.advance(7);
+      require(rel(dev.step(7, next_coord, next_state.query_page(), next_blocks),
+                  ref.step(7, next_coord, next_state.query_page(), next_blocks)) < tolerance,
+              "captured step uses current request routing arrays");
+    }
+    dev.reset_request_state();
+    ctx.synchronize();
+    const auto model_bytes = cuda::device_info(0).pool_used_bytes;
+    auto large_prompt = prompt;
+    large_prompt.insert(large_prompt.end(), 1200, 7);
+    const auto large_embeds = ref.embed(large_prompt);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+      require(rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout)) < tolerance,
+              "prefill before allocation failure");
+      DecodeState before(layout, prompt);
+      const auto coord = before.advance(7);
+      require(rel(dev.step(7, coord, before.query_page(), blocks),
+                  ref.step(7, coord, before.query_page(), blocks)) < tolerance,
+              "captured step before allocation failure");
+      // Four prefill arrays, then two successful KV grows: fail midway
+      // through reserve while a previous captured step still exists.
+      ctx.fail_allocation_after_for_testing(6);
+      bool failed = false;
+      try {
+        GenerationConfig config;
+        config.max_new_tokens = 1;
+        (void)generate_from_embeddings(dev, large_prompt, large_embeds, config);
+      } catch (const std::bad_alloc&) {
+        failed = true;
+      }
+      ctx.fail_allocation_after_for_testing(-1);
+      require(failed, "injected partial KV allocation failure reached");
+      ctx.synchronize();
+      require(cuda::device_info(0).pool_used_bytes == model_bytes,
+              "failed request releases all request-owned device arrays");
+      dev.reset_request_state();
+      dev.reset_request_state();
+      require(rel(dev.prefill(embeds, layout), ref.prefill(embeds, layout)) < tolerance,
+              "same decoder recovers after partial allocation failure");
+      dev.reset_request_state();
+      std::println("partial allocation failure/reuse cycle {} PASS", cycle);
+    }
 }
 
 int main() {
   if (cuda::device_count() == 0) return skip("no CUDA device");
   return run_tests([] {
+    context_ownership();
     compare(cuda::WeightFormat::kBf16, 2e-2);
     compare(cuda::WeightFormat::kInt8, 2e-2);
   });

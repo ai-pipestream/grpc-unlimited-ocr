@@ -1,0 +1,80 @@
+CORRECTED TINY START 2026-11-08T22:11:47Z
+43f7e8a810a31f88f236e03fdf900e2ad3272b37
+START generator_recovery_test
+9172618158b89e9e8cfe260e3c2e33d98ff434c29e69a136d57a35f7c9b2470a  build-native/generator_recovery_test
+ok
+PASS generator_recovery_test
+START intel_numeric_guard_test
+96aec4648ee53ed3155c4e73be9bb0be49ddcf2fee271009ade397680437c535  build-native/intel_numeric_guard_test
+ok
+PASS intel_numeric_guard_test
+START intel_ops_test
+f7048a71796727501281ba8f7c0715857e52b832a562973d74c881dd72efeb40  build-native/intel_ops_test
+device=Intel(R) Arc(TM) Pro B70 Graphics driver=1.15.39122
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=4.76837e-07
+activation count=903 max_abs=2.38419e-07
+rms_norm count=903 max_abs=2.38419e-07
+softmax_masked count=903 max_abs=1.11759e-08
+linear_100_device_us=1334
+linear_bias count=91 max_abs=4.29153e-06
+linear_no_bias count=91 max_abs=4.29153e-06
+PASS initial Intel primitive parity; full model has separate qualification gates
+PASS intel_ops_test
+START intel_native_ops_test
+fa4d87f229b3075c1cc0956471ef3c56a3246557d733d0078ad7ceaf3f013378  build-native/intel_native_ops_test
+actual device=Intel(R) Arc(TM) Pro B70 Graphics cap_bytes=27393838284
+position linear table  rel err 8.98e-07 (tol 2e-06)
+position cubic grid    rel err 8.31e-08 (tol 2e-06)
+linear bf16            rel err 8.04e-08 (tol 1e-05)
+model GEMM shape M=1 N=1280 K=1280
+model bf16 projection  rel err 1.21e-07 (tol 2e-05)
+model GEMM shape M=17 N=1280 K=1280
+model bf16 projection  rel err 1.44e-07 (tol 2e-05)
+model GEMM shape M=17 N=2304 K=768
+model bf16 projection  rel err 2.01e-07 (tol 2e-05)
+model GEMM shape M=3 N=6848 K=1280
+model bf16 projection  rel err 3.37e-07 (tol 2e-05)
+model GEMM shape M=1 N=896 K=1280
+model bf16 projection  rel err 1.11e-07 (tol 2e-05)
+gemm_nt batched        rel err 2.38e-07 (tol 1e-05)
+gemm_nn                rel err 5.13e-08 (tol 1e-05)
+offset LayerNorm width=2
+offset low-variance layer_norm rel err 0.00e+00 (tol 1e-05)
+offset LayerNorm width=768
+offset low-variance layer_norm rel err 9.51e-07 (tol 1e-05)
+offset LayerNorm width=1024
+offset low-variance layer_norm rel err 2.46e-06 (tol 1e-05)
+layer_norm             rel err 2.42e-07 (tol 1e-05)
+rms_norm               rel err 3.11e-07 (tol 1e-05)
+gelu_erf               rel err 1.17e-07 (tol 1e-06)
+quick_gelu             rel err 5.87e-08 (tol 1e-06)
+softmax_rows           rel err 2.86e-07 (tol 1e-05)
+conv2d via im2col      rel err 6.15e-08 (tol 1e-05)
+rope page2d            rel err 1.02e-07 (tol 1e-05)
+block_summaries        rel err 8.38e-08 (tol 1e-05)
+route_blocks bias      rel err 4.77e-07 (tol 1e-05)
+ok
+PASS intel_native_ops_test
+START intel_native_decoder_test
+938c048caa874189880ae84c07b808ad479f420a468f5d3a3d8a2e9cd907a398  build-native/intel_native_decoder_test
+weights bf16
+prefill logits: relative error 3.52e-03
+step      7: relative error 3.90e-03
+step      9: relative error 4.30e-03
+step 128827: relative error 7.66e-03
+step     11: relative error 3.42e-03
+step    100: relative error 4.23e-03
+step    113: relative error 6.84e-03
+step    126: relative error 5.70e-03
+failure_recovery case=0 retained=17239856 peak=17762648 cap=67108864 PASS
+failure_recovery case=1 retained=17239856 peak=67108863 cap=67108864 PASS
+failure_recovery case=2 retained=17239856 peak=67108863 cap=67108864 PASS
+ok
+PASS intel_native_decoder_test
+START intel_native_vision_test
+c582b8becd193c70fe0c1963942520c70a2fe26a9f11b01c697671ddd9e587dd  build-native/intel_native_vision_test
+tiny model, tiled page: relative error 2.59e-03
+ok
+PASS intel_native_vision_test
+CORRECTED TINY RELEASE 2026-11-08T22:11:50Z

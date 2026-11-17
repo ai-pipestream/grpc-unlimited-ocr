@@ -28,6 +28,7 @@ class CudaDecoder final : public DecoderModel {
               RouterParams router = default_router_params(), WeightFormat format = WeightFormat::kBf16);
 
   Tensor embed(const std::vector<std::int64_t>& ids) const override;
+  void reset_request_state() noexcept override;
   std::vector<float> prefill(const Tensor& embeds, const PromptLayout& layout) override;
   std::vector<float> step(std::int64_t token, RopeCoord coord, std::int64_t query_page,
                           const BlockPages& prompt_blocks) override;

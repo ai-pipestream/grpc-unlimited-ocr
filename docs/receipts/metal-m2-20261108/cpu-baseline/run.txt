@@ -1,0 +1,4 @@
+finish	0
+prompt_tokens	279
+generated_tokens	171
+page	tests/goldens/quickstart-p2/page.png

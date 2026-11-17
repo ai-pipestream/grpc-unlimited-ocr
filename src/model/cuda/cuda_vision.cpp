@@ -269,6 +269,7 @@ Tensor CudaVisionEncoder::encode_view(const Tensor& image) const {
   if (image.rank() != 3 || image.dim(0) != 3 || image.dim(1) % 64 != 0 || image.dim(1) != image.dim(2)) {
     throw std::invalid_argument("CudaVisionEncoder: image must be [3, S, S] with S a multiple of 64");
   }
+  if (image.dim(1) >= 1024) ctx_.require_headroom(1ULL << 30);
   const Array pixels = upload_tensor(ctx_, image, DType::kF32);
   std::int64_t g = 0;
   const Array cells = sam_forward(pixels, image.dim(1), g);
