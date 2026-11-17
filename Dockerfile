@@ -14,7 +14,7 @@
 # the image.
 ARG UOCR_CUDA_ARCHITECTURES="87;89"
 
-FROM nvidia/cuda:13.4.3-devel-ubuntu26.04 AS build
+FROM nvidia/cuda:13.5.0-devel-ubuntu26.04 AS build
 ARG UOCR_CUDA_ARCHITECTURES
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +26,7 @@ COPY . .
 # bump it when gRPC, CUDA, the base image or the toolchain moves.
 ARG TARGETARCH
 ARG BUILD_JOBS=2
-RUN --mount=type=cache,id=grpc-unlimited-ocr-cuda13.4-ubuntu26-grpc1.83.0-${TARGETARCH},target=/build \
+RUN --mount=type=cache,id=grpc-unlimited-ocr-cuda13.5-ubuntu26-grpc1.83.0-${TARGETARCH},target=/build \
     case "$BUILD_JOBS" in ''|*[!0-9]*|0) echo 'BUILD_JOBS must be positive' >&2; exit 1;; esac \
  && test "$BUILD_JOBS" -gt 0 \
  && cmake -S . -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUOCR_WITH_CUDA=ON -DUOCR_WERROR=ON \
@@ -35,7 +35,7 @@ RUN --mount=type=cache,id=grpc-unlimited-ocr-cuda13.4-ubuntu26-grpc1.83.0-${TARG
  && ctest --test-dir /build --output-on-failure \
  && mkdir -p /out && cp /build/uocr-run /build/grpc-unlimited-ocr-server /out/
 
-FROM nvidia/cuda:13.4.3-runtime-ubuntu26.04
+FROM nvidia/cuda:13.5.0-runtime-ubuntu26.04
 ARG UOCR_REVISION=
 LABEL org.opencontainers.image.revision=${UOCR_REVISION}
 COPY --from=build /out/uocr-run /usr/local/bin/uocr-run
