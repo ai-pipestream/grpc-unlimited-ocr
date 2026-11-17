@@ -42,10 +42,10 @@ void activations_and_softmax() {
   Tensor g({3}, {-1, 0, 1});
   ref::gelu_erf(g);
   require(near(g.data()[2], 0.8413447f) && near(g.data()[0], -0.1586553f) && g.data()[1] == 0, "exact gelu");
-  Tensor q({1}, {1});
+  Tensor q({1}, 1.0f);
   ref::quick_gelu(q);
   require(near(q.data()[0], 1 / (1 + std::exp(-1.702f))), "quick gelu");
-  Tensor si({1}, {2});
+  Tensor si({1}, 2.0f);
   ref::silu(si);
   require(near(si.data()[0], 2 / (1 + std::exp(-2.0f))), "silu");
 
