@@ -6,9 +6,10 @@ fragments back to the caller. The model runs on a native engine in this
 repo: weights load directly from the upstream safetensors, the forward
 pass is C++. Implemented backends are the fp32 CPU reference and CUDA
 (bf16 and int8). The native Intel SYCL/oneDNN bf16 model path is implemented;
-[qualification status](docs/intel-native.md) lists hardware results and open
-RPC/performance tests. Apple Metal, Hailo offload and int4 remain planned
-in this branch. There is no inference runtime and no
+[qualification status](docs/intel-native.md) records its tested sources and limits.
+The native [Apple Metal backend](docs/metal.md) also implements vision and decoder
+inference; [Metal receipts](docs/metal-status.md) distinguish hardware tests from
+release qualification. Hailo offload and int4 remain planned. There is no inference runtime and no
 Python at build or run time.
 
 **Status:** the reference engine matches the upstream implementation token
@@ -45,8 +46,9 @@ With the CUDA backend (`-DUOCR_WITH_CUDA=ON`; with a CUDA 12 toolkit add
 
 ```sh
 docker build -t grpc-unlimited-ocr:local .
-docker run --rm --gpus all -v /path/to/unlimited-ocr-2:/models:ro -v "$PWD/pages:/pages:ro" \
-  grpc-unlimited-ocr:local /pages/page1.png
+docker run --rm --gpus all --entrypoint /usr/local/bin/uocr-run \
+  -v /path/to/unlimited-ocr-2:/models:ro -v "$PWD/pages:/pages:ro" \
+  grpc-unlimited-ocr:local --models /models --backend cuda /pages/page1.png
 ```
 
 ## The service
@@ -67,8 +69,8 @@ grpcurl -plaintext localhost:50073 ai.pipestream.unlimitedocr.v1.UnlimitedOcrSer
 
 Configuration is `GRPC_UOCR_*` environment variables (see
 [`src/service/config.h`](src/service/config.h)): `LISTEN_ADDRESS`
-(`0.0.0.0:50073`), `BACKEND` (`cuda`, `reference`, `intel-gpu` when built; `metal` and
-`cpu` remain unavailable in this branch), `DEVICE_INDEX`, `WEIGHT_FORMAT` (`bf16`, `int8`),
+(`0.0.0.0:50073`), `BACKEND` (`cuda`, `reference`, `intel-gpu`, `metal` when built;
+use `reference` for the CPU backend), `DEVICE_INDEX`, `WEIGHT_FORMAT` (`bf16`, `int8`),
 `MODELS_DIR` (`/models`), `PAGE_WINDOW` (10),
 `MAX_TOKENS_PER_PAGE` (20000), `NGRAM_SIZE` (35), `NGRAM_WINDOW` (1024),
 `NGRAM_WINDOW_SINGLE_PAGE` (128), `MAX_PAGES`, `MAX_PAGE_BYTES`,

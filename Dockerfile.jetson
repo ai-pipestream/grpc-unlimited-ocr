@@ -48,6 +48,7 @@ USER 65532:65532
 FROM runtime AS server
 ENV GRPC_UOCR_LISTEN_ADDRESS=0.0.0.0:50073 \
     GRPC_UOCR_BACKEND=cuda \
+    GRPC_UOCR_WEIGHT_FORMAT=int8 \
     GRPC_UOCR_MODELS_DIR=/models
 EXPOSE 50073
 ENTRYPOINT ["/usr/local/bin/grpc-unlimited-ocr-server"]

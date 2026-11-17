@@ -1,24 +1,22 @@
-# Metal primitive implementation checkpoint
+# Metal implementation and qualification status
 
-`UOCR_WITH_METAL=ON` builds a native Objective-C++ bridge to Metal and
-MPSMatrixMultiplication. MPS is used only for dense GEMM. The forward pass
-has not been replaced with an inference runtime. The primitive implements
-fp32 x times transposed weight, with explicit host transfers, a 256 MiB
-aggregate device-buffer cap and one serialized command at a time.
+The full native Metal vision and decoder backend is implemented. Build and
+configuration instructions are in [metal.md](metal.md). It uses native
+Metal kernels and MPS only for dense matrix multiplication; it does not
+replace the forward pass with an inference runtime. CPU fallback is not
+automatic.
 
-The standalone `metal_gemm_test` compares against the unchanged reference
-backend with 2e-4 relative/absolute tolerance over three shapes and five
-repetitions per shape. It also checks a missing device and an aggregate
-allocation overflow. It exits 77 without a device. A skipped test is not
-qualification. Only its C++ syntax and the non-Apple configure rejection
-have been checked on Linux; the Objective-C++ implementation is uncompiled.
+The earlier primitive-only checkpoint is superseded. On the Apple M2,
+source `2db7d72a473b7f064ea3ec3cc97ccf6a497b420a` passed the full typed-document
+TCP matrix: six alternating one/two-page requests and three cancellation,
+admission-release and recovery cycles. Content, geometry, page identity,
+references and repeated serialized Document payloads were checked. Exact
+source, model and binary identities and raw logs are in the
+[typed-document receipt](receipts/metal-m2-typed-documents-20261108/README.md).
 
-This is not a usable Metal service backend. Native vision, decoder,
-attention, normalization, activation, routing, quantized weights and
-device-resident model integration remain missing. The service still rejects
-Metal. No CPU execution is disguised as Metal.
-
-Actual-device testing is blocked: on 2026-11-08 Mac DNS failed and SSH to
-the verified Tailscale peer 100.102.192.43 timed out. No chip/RAM inventory,
-Mac model load, golden output, RPC, cancellation/recovery or warm timing
-comparison has run. Do not integrate this checkpoint as completed support.
+Those results qualify the recorded source and fixtures. They are not a
+claim that every subsequent combined branch or release artifact has been
+tested. Final combined-source qualification is tracked in
+[gRParse #85](https://git.rokkon.com/ai-pipestream/gRParse/issues/85).
+Performance work and broader document/long-running coverage remain separate
+from the completed fixture correctness gates.
